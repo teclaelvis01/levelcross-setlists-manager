@@ -2,7 +2,7 @@
 
 <div class="form-container">
   <h1><%= song ? '✏️ Editar canción' : '➕ Nueva canción' %></h1>
-  <form action="<%= song ? '/admin/songs/' + song.slug : '/admin/songs' %>" method="POST" class="song-form">
+  <form action="<%= baseUrl %><%= song ? '/admin/songs/' + song.slug : '/admin/songs' %>" method="POST" class="song-form">
     <div class="form-group">
       <label for="title">Título *</label>
       <input type="text" id="title" name="title" required value="<%= song ? song.title : '' %>" placeholder="Nombre de la canción">
@@ -28,7 +28,7 @@
     </div>
 
     <div class="form-actions">
-      <a href="/admin" class="btn btn-secondary">Cancelar</a>
+      <a href="<%= baseUrl %>/admin" class="btn btn-secondary">Cancelar</a>
       <button type="submit" class="btn btn-primary"><%= song ? '💾 Guardar' : '✅ Crear' %></button>
     </div>
   </form>

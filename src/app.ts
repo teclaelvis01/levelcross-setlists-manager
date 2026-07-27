@@ -9,7 +9,11 @@ import { Song } from './types';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const BASE_URL = process.env.BASE_URL || '';
 const SALT_ROUNDS = 10;
+
+// Make baseUrl available to all views
+app.locals.baseUrl = BASE_URL;
 
 // Multer config for file uploads (import DB)
 const upload = multer({ dest: path.join(__dirname, '..', 'data', 'uploads') });
@@ -17,7 +21,9 @@ const upload = multer({ dest: path.join(__dirname, '..', 'data', 'uploads') });
 // Middleware
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
-app.use(express.static(path.join(__dirname, '..', 'public')));
+
+// Static files under base path
+app.use(BASE_URL, express.static(path.join(__dirname, '..', 'public')));
 
 app.use(session({
   secret: process.env.SESSION_SECRET || 'setlists-manager-secret-change-in-production',
@@ -28,6 +34,7 @@ app.use(session({
     secure: false, // set to true if using HTTPS
     sameSite: 'lax',
     maxAge: 24 * 60 * 60 * 1000, // 24 hours
+    path: BASE_URL || '/',
   },
 }));
 
@@ -131,7 +138,7 @@ app.locals.renderLyrics = renderLyrics;
 
 function requireAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
   if (!req.session.userId) {
-    return res.redirect('/login');
+    return res.redirect(`${BASE_URL}/login`);
   }
   next();
 }
@@ -143,12 +150,18 @@ app.use((req, _res, next) => {
   next();
 });
 
+// ── Route helpers ──
+
+function r(path: string): string {
+  return BASE_URL + path;
+}
+
 // ── Public Routes ──
 
 // GET / - Public song list (redirects to setup if no admin user)
-app.get('/', (req, res) => {
+app.get(r('/'), (req, res) => {
   if (!isSetupComplete()) {
-    return res.redirect('/setup');
+    return res.redirect(r('/setup'));
   }
   const search = (req.query.search as string) || '';
   let songs: Song[];
@@ -163,9 +176,9 @@ app.get('/', (req, res) => {
 });
 
 // GET /songs/:slug - Public song viewer by slug
-app.get('/songs/:slug', (req, res) => {
+app.get(r('/songs/:slug'), (req, res) => {
   if (!isSetupComplete()) {
-    return res.redirect('/setup');
+    return res.redirect(r('/setup'));
   }
   const song = db.prepare('SELECT * FROM songs WHERE slug = ?').get(req.params.slug) as Song | undefined;
   if (!song) {
@@ -182,17 +195,17 @@ function isSetupComplete(): boolean {
 }
 
 // GET /setup - Initial setup form (only if no admin user exists)
-app.get('/setup', (req, res) => {
+app.get(r('/setup'), (req, res) => {
   if (isSetupComplete()) {
-    return res.redirect('/login');
+    return res.redirect(r('/login'));
   }
   res.render('setup', { error: null });
 });
 
 // POST /setup - Create admin user
-app.post('/setup', (req, res) => {
+app.post(r('/setup'), (req, res) => {
   if (isSetupComplete()) {
-    return res.redirect('/login');
+    return res.redirect(r('/login'));
   }
   const { username, password, confirm_password } = req.body;
   if (!username || !password || !confirm_password) {
@@ -209,25 +222,25 @@ app.post('/setup', (req, res) => {
     db.prepare('INSERT INTO users (username, password_hash) VALUES (?, ?)').run(username, hash);
     req.session.userId = 1;
     req.session.username = username;
-    res.redirect('/admin');
+    res.redirect(r('/admin'));
   } catch {
     res.render('setup', { error: 'Error al crear el usuario. Intente de nuevo.' });
   }
 });
 
 // GET /login - Login form
-app.get('/login', (req, res) => {
+app.get(r('/login'), (req, res) => {
   if (req.session.userId) {
-    return res.redirect('/admin');
+    return res.redirect(r('/admin'));
   }
   if (!isSetupComplete()) {
-    return res.redirect('/setup');
+    return res.redirect(r('/setup'));
   }
   res.render('login', { error: null });
 });
 
 // POST /login - Authenticate
-app.post('/login', (req, res) => {
+app.post(r('/login'), (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) {
     return res.render('login', { error: 'Usuario y contraseña requeridos' });
@@ -241,20 +254,20 @@ app.post('/login', (req, res) => {
   }
   req.session.userId = user.id;
   req.session.username = user.username;
-  res.redirect('/admin');
+  res.redirect(r('/admin'));
 });
 
 // GET /logout
-app.get('/logout', (req, res) => {
+app.get(r('/logout'), (req, res) => {
   req.session.destroy(() => {
-    res.redirect('/');
+    res.redirect(r('/'));
   });
 });
 
 // ── Admin (Private) Routes ──
 
 // GET /admin - Admin panel / song management
-app.get('/admin', requireAuth, (req, res) => {
+app.get(r('/admin'), requireAuth, (req, res) => {
   const search = (req.query.search as string) || '';
   const dbError = (req.query.db_error as string) || null;
   const dbSuccess = (req.query.db_success as string) || null;
@@ -270,12 +283,12 @@ app.get('/admin', requireAuth, (req, res) => {
 });
 
 // GET /admin/songs/new - Create form
-app.get('/admin/songs/new', requireAuth, (req, res) => {
+app.get(r('/admin/songs/new'), requireAuth, (req, res) => {
   res.render('form', { song: null, admin: true });
 });
 
 // POST /admin/songs - Create song
-app.post('/admin/songs', requireAuth, (req, res) => {
+app.post(r('/admin/songs'), requireAuth, (req, res) => {
   const { title, artist, lyrics, audio_url } = req.body;
   if (!title || !title.trim()) {
     return res.status(400).send('El título es requerido');
@@ -287,11 +300,11 @@ app.post('/admin/songs', requireAuth, (req, res) => {
   db.prepare(
     'INSERT INTO songs (title, slug, artist, lyrics, audio_url) VALUES (?, ?, ?, ?, ?)'
   ).run(cleanTitle, slug, (artist || '').trim(), lyrics || '', (audio_url || '').trim());
-  res.redirect('/admin');
+  res.redirect(r('/admin'));
 });
 
 // GET /admin/songs/:slug/edit - Edit form
-app.get('/admin/songs/:slug/edit', requireAuth, (req, res) => {
+app.get(r('/admin/songs/:slug/edit'), requireAuth, (req, res) => {
   const song = db.prepare('SELECT * FROM songs WHERE slug = ?').get(req.params.slug) as Song | undefined;
   if (!song) {
     return res.status(404).send('Canción no encontrada');
@@ -300,7 +313,7 @@ app.get('/admin/songs/:slug/edit', requireAuth, (req, res) => {
 });
 
 // POST /admin/songs/:slug - Update song
-app.post('/admin/songs/:slug', requireAuth, (req, res) => {
+app.post(r('/admin/songs/:slug'), requireAuth, (req, res) => {
   const { title, artist, lyrics, audio_url } = req.body;
   if (!title || !title.trim()) {
     return res.status(400).send('El título es requerido');
@@ -322,19 +335,19 @@ app.post('/admin/songs/:slug', requireAuth, (req, res) => {
   db.prepare(
     'UPDATE songs SET title = ?, slug = ?, artist = ?, lyrics = ?, audio_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?'
   ).run(cleanTitle, slug, (artist || '').trim(), lyrics || '', (audio_url || '').trim(), existing.id);
-  res.redirect('/admin');
+  res.redirect(r('/admin'));
 });
 
 // POST /admin/songs/:slug/delete - Delete song
-app.post('/admin/songs/:slug/delete', requireAuth, (req, res) => {
+app.post(r('/admin/songs/:slug/delete'), requireAuth, (req, res) => {
   db.prepare('DELETE FROM songs WHERE slug = ?').run(req.params.slug);
-  res.redirect('/admin');
+  res.redirect(r('/admin'));
 });
 
 // ── Database Backup Routes ──
 
 // GET /admin/export - Download the SQLite database file
-app.get('/admin/export', requireAuth, (req, res) => {
+app.get(r('/admin/export'), requireAuth, (req, res) => {
   const dbPath = path.join(__dirname, '..', 'data', 'setlists.db');
   if (!fs.existsSync(dbPath)) {
     return res.status(404).send('Base de datos no encontrada');
@@ -344,9 +357,9 @@ app.get('/admin/export', requireAuth, (req, res) => {
 });
 
 // POST /admin/import - Upload a SQLite database file to replace current one
-app.post('/admin/import', requireAuth, upload.single('database'), (req, res) => {
+app.post(r('/admin/import'), requireAuth, upload.single('database'), (req, res) => {
   if (!req.file) {
-    return res.redirect('/admin?db_error=No+se+seleccionó+ningún+archivo');
+    return res.redirect(r('/admin?db_error=No+se+seleccionó+ningún+archivo'));
   }
 
   const dbPath = path.join(__dirname, '..', 'data', 'setlists.db');
@@ -357,13 +370,13 @@ app.post('/admin/import', requireAuth, upload.single('database'), (req, res) => 
   const ext = path.extname(req.file.originalname).toLowerCase();
   if (!validExts.includes(ext)) {
     fs.unlinkSync(uploadedPath);
-    return res.redirect('/admin?db_error=El+archivo+debe+tener+extensión+.db+,+.sqlite+o+.sqlite3');
+    return res.redirect(r('/admin?db_error=El+archivo+debe+tener+extensión+.db+,+.sqlite+o+.sqlite3'));
   }
 
   // Validate file size (max 50MB)
   if (req.file.size > 50 * 1024 * 1024) {
     fs.unlinkSync(uploadedPath);
-    return res.redirect('/admin?db_error=El+archivo+es+demasiado+grande+(máximo+50MB)');
+    return res.redirect(r('/admin?db_error=El+archivo+es+demasiado+grande+(máximo+50MB)'));
   }
 
   try {
@@ -375,7 +388,7 @@ app.post('/admin/import', requireAuth, upload.single('database'), (req, res) => 
     if (tables.length < 2) {
       testDb.close();
       fs.unlinkSync(uploadedPath);
-      return res.redirect('/admin?db_error=El+archivo+no+es+una+base+de+datos+válida+(debe+contener+las+tablas+songs+y+users)');
+      return res.redirect(r('/admin?db_error=El+archivo+no+es+una+base+de+datos+válida+(debe+contener+las+tablas+songs+y+users)'));
     }
     testDb.close();
 
@@ -390,7 +403,7 @@ app.post('/admin/import', requireAuth, upload.single('database'), (req, res) => 
     delete require.cache[require.resolve('./db')];
     require('./db');
 
-    res.redirect('/admin?db_success=Base+de+datos+importada+correctamente.+Reinicia+el+servidor+para+que+los+cambios+surtan+efecto+completo.');
+    res.redirect(r('/admin?db_success=Base+de+datos+importada+correctamente.+Reinicia+el+servidor+para+que+los+cambios+surtan+efecto+completo.'));
   } catch (err) {
     // Clean up temp file
     try { fs.unlinkSync(uploadedPath); } catch {}
@@ -399,12 +412,13 @@ app.post('/admin/import', requireAuth, upload.single('database'), (req, res) => 
       delete require.cache[require.resolve('./db')];
       require('./db');
     } catch {}
-    res.redirect('/admin?db_error=Error+al+importar:+'+encodeURIComponent((err as Error).message));
+    res.redirect(r('/admin?db_error=Error+al+importar:+'+encodeURIComponent((err as Error).message)));
   }
 });
 
 app.listen(PORT, () => {
-  console.log(`Setlists Manager running at http://localhost:${PORT}`);
+  const url = BASE_URL ? `http://localhost:${PORT}${BASE_URL}` : `http://localhost:${PORT}`;
+  console.log(`Setlists Manager running at ${url}`);
 
   // Migration: assign slugs to existing songs that don't have one
   const songsWithoutSlug = db.prepare('SELECT * FROM songs WHERE slug IS NULL OR slug = \'\'').all() as Song[];
@@ -418,6 +432,6 @@ app.listen(PORT, () => {
 
   const userCount = (db.prepare('SELECT COUNT(*) as count FROM users').get() as { count: number }).count;
   if (userCount === 0) {
-    console.log(`⚠️  No hay usuarios configurados. Visita http://localhost:${PORT}/setup para crear el administrador.`);
+    console.log(`⚠️  No hay usuarios configurados. Visita ${url}/setup para crear el administrador.`);
   }
 });
