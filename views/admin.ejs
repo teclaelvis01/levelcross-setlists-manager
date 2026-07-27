@@ -5,11 +5,11 @@
     <h1>📋 Admin</h1>
     <p class="page-subtitle">Gestiona las canciones del setlist</p>
   </div>
-  <a href="<%= baseUrl %>/admin/songs/new" class="btn btn-primary">+ Nueva Canción</a>
+  <a href="<%= (typeof baseUrl !== 'undefined' ? baseUrl : '') %>/admin/songs/new" class="btn btn-primary">+ Nueva Canción</a>
 </div>
 
 <div class="search-bar">
-  <form action="<%= baseUrl %>/admin" method="GET">
+  <form action="<%= (typeof baseUrl !== 'undefined' ? baseUrl : '') %>/admin" method="GET">
     <input type="text" name="search" placeholder="Buscar canción..." value="<%= search %>">
     <button type="submit" class="btn">🔍 Buscar</button>
   </form>
@@ -25,13 +25,13 @@
 <% if (songs.length === 0) { %>
   <div class="empty-state">
     <p>No hay canciones aún</p>
-    <a href="<%= baseUrl %>/admin/songs/new" class="btn btn-primary">+ Crear primera canción</a>
+    <a href="<%= (typeof baseUrl !== 'undefined' ? baseUrl : '') %>/admin/songs/new" class="btn btn-primary">+ Crear primera canción</a>
   </div>
 <% } else { %>
   <div class="song-list admin-list">
     <% songs.forEach(song => { %>
       <div class="song-card">
-        <a href="<%= baseUrl %>/songs/<%= song.slug %>" class="song-card__link">
+        <a href="<%= (typeof baseUrl !== 'undefined' ? baseUrl : '') %>/songs/<%= song.slug %>" class="song-card__link">
           <div class="song-card__info">
             <h3><%= song.title %></h3>
             <% if (song.artist) { %>
@@ -45,10 +45,10 @@
               🔊
             </a>
           <% } %>
-          <a href="<%= baseUrl %>/admin/songs/<%= song.slug %>/edit" class="btn btn-icon" title="Editar">
+          <a href="<%= (typeof baseUrl !== 'undefined' ? baseUrl : '') %>/admin/songs/<%= song.slug %>/edit" class="btn btn-icon" title="Editar">
             ✏️
           </a>
-          <form action="<%= baseUrl %>/admin/songs/<%= song.slug %>/delete" method="POST" class="inline-form" onsubmit="return confirm('¿Eliminar esta canción?')">
+          <form action="<%= (typeof baseUrl !== 'undefined' ? baseUrl : '') %>/admin/songs/<%= song.slug %>/delete" method="POST" class="inline-form" onsubmit="return confirm('¿Eliminar esta canción?')">
             <button type="submit" class="btn btn-icon btn-danger" title="Eliminar">🗑️</button>
           </form>
         </div>
@@ -63,10 +63,10 @@
   <h2>💾 Backup de Base de Datos</h2>
   <p class="backup-desc">Exporta o importa la base de datos SQLite completa para hacer copias de seguridad o restaurar datos.</p>
   <div class="backup-actions">
-    <a href="<%= baseUrl %>/admin/export" class="btn btn-primary">
+    <a href="<%= (typeof baseUrl !== 'undefined' ? baseUrl : '') %>/admin/export" class="btn btn-primary">
       ⬇️ Exportar DB
     </a>
-    <form action="<%= baseUrl %>/admin/import" method="POST" enctype="multipart/form-data" class="inline-form">
+    <form action="<%= (typeof baseUrl !== 'undefined' ? baseUrl : '') %>/admin/import" method="POST" enctype="multipart/form-data" class="inline-form">
       <label class="btn btn-secondary import-label">
         📤 Importar DB
         <input type="file" name="database" accept=".db,.sqlite,.sqlite3" required hidden onchange="this.form.submit()">

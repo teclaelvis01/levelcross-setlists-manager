@@ -9,7 +9,7 @@
       <div class="alert alert-error"><%= error %></div>
     <% } %>
 
-    <form action="<%= baseUrl %>/login" method="POST" class="auth-form">
+    <form action="<%= (typeof baseUrl !== 'undefined' ? baseUrl : '') %>/login" method="POST" class="auth-form">
       <div class="form-group">
         <label for="username">Usuario</label>
         <input type="text" id="username" name="username" required placeholder="admin" autocomplete="username">

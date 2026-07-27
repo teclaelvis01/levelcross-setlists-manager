@@ -6,7 +6,7 @@
 </div>
 
 <div class="search-bar">
-  <form action="<%= baseUrl %>/" method="GET">
+  <form action="<%= (typeof baseUrl !== 'undefined' ? baseUrl : '') %>/" method="GET">
     <input type="text" name="search" placeholder="Buscar canción..." value="<%= search %>">
     <button type="submit" class="btn">🔍 Buscar</button>
   </form>
@@ -16,13 +16,13 @@
   <div class="empty-state">
     <p>No hay canciones aún</p>
     <% if (typeof isAuthenticated !== 'undefined' && isAuthenticated) { %>
-      <a href="<%= baseUrl %>/admin/songs/new" class="btn btn-primary">+ Crear primera canción</a>
+      <a href="<%= (typeof baseUrl !== 'undefined' ? baseUrl : '') %>/admin/songs/new" class="btn btn-primary">+ Crear primera canción</a>
     <% } %>
   </div>
 <% } else { %>
   <div class="song-list">
     <% songs.forEach(song => { %>
-      <a href="<%= baseUrl %>/songs/<%= song.slug %>" class="song-card">
+      <a href="<%= (typeof baseUrl !== 'undefined' ? baseUrl : '') %>/songs/<%= song.slug %>" class="song-card">
         <div class="song-card__info">
           <h3><%= song.title %></h3>
           <% if (song.artist) { %>
