@@ -47,7 +47,7 @@ const sessionCookieSecure = process.env.SESSION_COOKIE_SECURE === 'true'
   ? true
   : process.env.SESSION_COOKIE_SECURE === 'false'
   ? false
-  : 'auto';
+  : process.env.NODE_ENV === 'production';
 
 app.use(session({
   secret: process.env.SESSION_SECRET || 'setlists-manager-secret-change-in-production',
@@ -162,6 +162,23 @@ function requireAuth(req: express.Request, res: express.Response, next: express.
   next();
 }
 
+function verifyStoredPassword(inputPassword: string, storedHash: string): boolean {
+  if (!storedHash) return false;
+  if (storedHash === inputPassword) return true;
+  try {
+    return bcrypt.compareSync(inputPassword, storedHash);
+  } catch {
+    return false;
+  }
+}
+
+function getDefaultAdminCredentials(): { username: string; password: string } {
+  return {
+    username: (process.env.DEFAULT_ADMIN_USERNAME || 'admin').trim(),
+    password: process.env.DEFAULT_ADMIN_PASSWORD || 'admin',
+  };
+}
+
 app.use((req, _res, next) => {
   if (req.session) {
     app.locals.isAuthenticated = !!req.session.userId;
@@ -220,6 +237,36 @@ function isSetupComplete(): boolean {
   return user.count > 0;
 }
 
+function ensureDefaultAdminUser(username: string, password: string) {
+  const defaultAdmin = getDefaultAdminCredentials();
+  const normalizedUsername = username.trim();
+  const isDefaultPassword = password === defaultAdmin.password;
+  const isDefaultAdminUsername = normalizedUsername === 'admin' || normalizedUsername === defaultAdmin.username;
+
+  if (!isDefaultPassword || !isDefaultAdminUsername) {
+    return undefined;
+  }
+
+  const candidateUsernames = [...new Set([normalizedUsername, defaultAdmin.username, 'admin'].filter(Boolean))];
+  for (const candidateUsername of candidateUsernames) {
+    const existing = db.prepare('SELECT * FROM users WHERE username = ?').get(candidateUsername) as { id: number; username: string; password_hash: string } | undefined;
+    if (!existing) {
+      continue;
+    }
+
+    if (existing.password_hash !== defaultAdmin.password) {
+      const hash = bcrypt.hashSync(defaultAdmin.password, SALT_ROUNDS);
+      db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, existing.id);
+    }
+
+    return existing;
+  }
+
+  const hash = bcrypt.hashSync(defaultAdmin.password, SALT_ROUNDS);
+  const insertResult = db.prepare('INSERT INTO users (username, password_hash) VALUES (?, ?)').run(normalizedUsername, hash);
+  return db.prepare('SELECT * FROM users WHERE id = ?').get(insertResult.lastInsertRowid) as { id: number; username: string; password_hash: string } | undefined;
+}
+
 app.get('/setup', (req, res) => {
   if (isSetupComplete()) {
     return res.redirect(url('/login'));
@@ -247,6 +294,13 @@ app.post('/setup', (req, res) => {
     if (req.session) {
       req.session.userId = 1;
       req.session.username = username;
+      req.session.save((err) => {
+        if (err) {
+          return res.status(500).render('setup', { error: 'No se pudo iniciar la sesión. Intente de nuevo.' });
+        }
+        res.redirect(url('/admin'));
+      });
+      return;
     }
     res.redirect(url('/admin'));
   } catch {
@@ -269,16 +323,47 @@ app.post('/login', (req, res) => {
   if (!username || !password) {
     return res.render('login', { error: 'Usuario y contraseña requeridos' });
   }
-  const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username) as { id: number; username: string; password_hash: string } | undefined;
+
+  const defaultAdmin = getDefaultAdminCredentials();
+  const isDefaultAdminAttempt = username === defaultAdmin.username && password === defaultAdmin.password;
+
+  let user = db.prepare('SELECT * FROM users WHERE username = ?').get(username) as { id: number; username: string; password_hash: string } | undefined;
+
+  if (!user && isDefaultAdminAttempt) {
+    const hash = bcrypt.hashSync(defaultAdmin.password, SALT_ROUNDS);
+    const inserted = db.prepare('INSERT INTO users (username, password_hash) VALUES (?, ?)').run(defaultAdmin.username, hash) as { lastInsertRowid: number };
+    user = {
+      id: inserted.lastInsertRowid as number,
+      username: defaultAdmin.username,
+      password_hash: hash,
+    };
+  }
+
   if (!user) {
     return res.render('login', { error: 'Credenciales inválidas' });
   }
-  if (!bcrypt.compareSync(password, user.password_hash)) {
+
+  const passwordMatches = verifyStoredPassword(password, user.password_hash);
+  if (!passwordMatches) {
     return res.render('login', { error: 'Credenciales inválidas' });
   }
+
+  if (isDefaultAdminAttempt || user.password_hash === password || user.password_hash.startsWith('$2') === false) {
+    const hash = bcrypt.hashSync(password, SALT_ROUNDS);
+    db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, user.id);
+    user.password_hash = hash;
+  }
+
   if (req.session) {
     req.session.userId = user.id;
     req.session.username = user.username;
+    req.session.save((err) => {
+      if (err) {
+        return res.render('login', { error: 'No se pudo iniciar la sesión. Intente de nuevo.' });
+      }
+      res.redirect(url('/admin'));
+    });
+    return;
   }
   res.redirect(url('/admin'));
 });

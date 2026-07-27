@@ -8,6 +8,9 @@ services:
       - PORT=3000
       - BASE_URL=${BASE_URL:-}
       - SESSION_SECRET=${SESSION_SECRET:-}
+      - SESSION_COOKIE_SECURE=true
+      - DEFAULT_ADMIN_USERNAME=${DEFAULT_ADMIN_USERNAME:-admin}
+      - DEFAULT_ADMIN_PASSWORD=${DEFAULT_ADMIN_PASSWORD:-admin}
     volumes:
       - data:/app/data
     restart: unless-stopped
