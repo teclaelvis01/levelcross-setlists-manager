@@ -4,8 +4,10 @@ import path from 'path';
 import bcrypt from 'bcryptjs';
 import multer from 'multer';
 import fs from 'fs';
-import db from './db';
+import dbDefault, { openDatabase } from './db';
 import { Song } from './types';
+
+let db = dbDefault;
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -391,11 +393,10 @@ app.post('/admin/import', requireAuth, upload.single('database'), (req, res) => 
       return res.redirect(url('/admin?db_error=El+archivo+no+es+una+base+de+datos+válida+(debe+contener+las+tablas+songs+y+users)'));
     }
     testDb.close();
-    db.close();
     fs.copyFileSync(uploadedPath, dbPath);
     fs.unlinkSync(uploadedPath);
-    delete require.cache[require.resolve('./db')];
-    require('./db');
+    db.close();
+    db = openDatabase();
     res.redirect(url('/admin?db_success=Base+de+datos+importada+correctamente.+Reinicia+el+servidor+para+que+los+cambios+surtan+efecto+completo.'));
   } catch (err) {
     try { fs.unlinkSync(uploadedPath); } catch {}

@@ -13,8 +13,13 @@ if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
-const db = new Database(dbPath);
-db.pragma('journal_mode = WAL');
+export function openDatabase() {
+  const instance = new Database(dbPath);
+  instance.pragma('journal_mode = WAL');
+  return instance;
+}
+
+const db = openDatabase();
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS users (
