@@ -215,6 +215,12 @@ main {
 }
 
 /* Song List */
+.results-meta {
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  margin-bottom: 12px;
+}
+
 .song-list {
   display: flex;
   flex-direction: column;
@@ -291,6 +297,74 @@ main {
 
 .inline-form {
   display: inline;
+}
+
+/* Pagination */
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 24px;
+  flex-wrap: wrap;
+}
+
+.pagination__pages {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pagination__page {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  height: 36px;
+  padding: 0 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text);
+  text-decoration: none;
+  font-size: 0.875rem;
+}
+
+.pagination__page.is-active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: white;
+}
+
+.page-size-select {
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  color: var(--text);
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+
+.page-size-select:hover {
+  border-color: var(--primary);
+}
+
+.page-size-select:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+.btn.is-active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: white;
+}
+
+.btn.is-disabled {
+  opacity: 0.45;
+  pointer-events: none;
 }
 
 /* Empty State */

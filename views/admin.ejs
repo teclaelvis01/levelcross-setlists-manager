@@ -11,6 +11,8 @@
 <div class="search-bar">
   <form action="<%= (typeof baseUrl !== 'undefined' ? baseUrl : '') %>/admin" method="GET">
     <input type="text" name="search" placeholder="Buscar canción..." value="<%= search %>">
+    <input type="hidden" name="page" value="1">
+    <input type="hidden" name="pageSize" value="<%= pageSize || 12 %>">
     <button type="submit" class="btn">🔍 Buscar</button>
   </form>
 </div>
@@ -28,6 +30,10 @@
     <a href="<%= (typeof baseUrl !== 'undefined' ? baseUrl : '') %>/admin/songs/new" class="btn btn-primary">+ Crear primera canción</a>
   </div>
 <% } else { %>
+  <div class="results-meta">
+    <p>Mostrando <%= songs.length %> de <%= totalCount %> canciones</p>
+  </div>
+
   <div class="song-list admin-list">
     <% songs.forEach(song => { %>
       <div class="song-card">
@@ -55,6 +61,29 @@
       </div>
     <% }) %>
   </div>
+
+  <% if (typeof totalPages !== 'undefined' && totalPages > 1) { %>
+    <div class="pagination">
+      <a href="<%= (typeof baseUrl !== 'undefined' ? baseUrl : '') %>/admin?search=<%= encodeURIComponent(search) %>&page=<%= currentPage - 1 %>&pageSize=<%= pageSize %>" class="btn btn-secondary <%= hasPrev ? '' : 'is-disabled' %>">
+        ← Anterior
+      </a>
+      <div class="pagination__pages">
+        <% for (let pageNumber = Math.max(1, currentPage - 1); pageNumber <= Math.min(totalPages, currentPage + 1); pageNumber++) { %>
+          <a href="<%= (typeof baseUrl !== 'undefined' ? baseUrl : '') %>/admin?search=<%= encodeURIComponent(search) %>&page=<%= pageNumber %>&pageSize=<%= pageSize %>" class="pagination__page <%= pageNumber === currentPage ? 'is-active' : '' %>">
+            <%= pageNumber %>
+          </a>
+        <% } %>
+      </div>
+      <a href="<%= (typeof baseUrl !== 'undefined' ? baseUrl : '') %>/admin?search=<%= encodeURIComponent(search) %>&page=<%= currentPage + 1 %>&pageSize=<%= pageSize %>" class="btn btn-secondary <%= hasNext ? '' : 'is-disabled' %>">
+        Siguiente →
+      </a>
+      <select class="page-size-select" onchange="window.location.href='<%= (typeof baseUrl !== 'undefined' ? baseUrl : '') %>/admin?search=<%= encodeURIComponent(search) %>&page=1&pageSize=' + this.value">
+        <option value="5" <%= pageSize === 5 ? 'selected' : '' %>>5 por página</option>
+        <option value="10" <%= pageSize === 10 ? 'selected' : '' %>>10 por página</option>
+        <option value="50" <%= pageSize === 50 ? 'selected' : '' %>>50 por página</option>
+      </select>
+    </div>
+  <% } %>
 <% } %>
 
 <hr class="section-divider">

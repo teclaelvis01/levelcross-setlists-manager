@@ -13,6 +13,8 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const BASE_URL = process.env.BASE_URL || '';
 const SALT_ROUNDS = 10;
+const DEFAULT_SONGS_PER_PAGE = 12;
+const PAGE_SIZE_OPTIONS = [5, 10, 50];
 
 // Make baseUrl available to all views
 app.locals.baseUrl = BASE_URL;
@@ -179,6 +181,32 @@ function getDefaultAdminCredentials(): { username: string; password: string } {
   };
 }
 
+function getPaginatedSongs(search: string, page: number, pageSize?: number) {
+  const normalizedSearch = search.trim();
+  const normalizedPageSize = PAGE_SIZE_OPTIONS.includes(pageSize || 0) ? (pageSize as number) : DEFAULT_SONGS_PER_PAGE;
+  const whereClause = normalizedSearch ? 'WHERE title LIKE ? OR artist LIKE ?' : '';
+  const countParams = normalizedSearch ? [`%${normalizedSearch}%`, `%${normalizedSearch}%`] : [];
+  const countRow = db.prepare(`SELECT COUNT(*) as count FROM songs ${whereClause}`).get(...countParams) as { count: number };
+  const totalCount = countRow.count;
+  const totalPages = Math.max(1, Math.ceil(totalCount / normalizedPageSize));
+  const currentPage = Math.min(Math.max(1, page), totalPages);
+  const offset = (currentPage - 1) * normalizedPageSize;
+  const listParams = normalizedSearch
+    ? [`%${normalizedSearch}%`, `%${normalizedSearch}%`, normalizedPageSize, offset]
+    : [normalizedPageSize, offset];
+  const songs = db.prepare(`SELECT * FROM songs ${whereClause} ORDER BY title ASC LIMIT ? OFFSET ?`).all(...listParams) as Song[];
+
+  return {
+    songs,
+    currentPage,
+    totalPages,
+    totalCount,
+    pageSize: normalizedPageSize,
+    hasPrev: currentPage > 1,
+    hasNext: currentPage < totalPages,
+  };
+}
+
 app.use((req, _res, next) => {
   if (req.session) {
     app.locals.isAuthenticated = !!req.session.userId;
@@ -208,15 +236,10 @@ app.get('/', (req, res) => {
     return res.redirect(url('/setup'));
   }
   const search = (req.query.search as string) || '';
-  let songs: Song[];
-  if (search) {
-    songs = db.prepare(
-      'SELECT * FROM songs WHERE title LIKE ? OR artist LIKE ? ORDER BY title ASC'
-    ).all(`%${search}%`, `%${search}%`) as Song[];
-  } else {
-    songs = db.prepare('SELECT * FROM songs ORDER BY title ASC').all() as Song[];
-  }
-  res.render('index', { songs, search });
+  const requestedPage = parseInt(req.query.page as string, 10) || 1;
+  const requestedPageSize = parseInt(req.query.pageSize as string, 10) || DEFAULT_SONGS_PER_PAGE;
+  const { songs, currentPage, totalPages, totalCount, pageSize, hasPrev, hasNext } = getPaginatedSongs(search, requestedPage, requestedPageSize);
+  res.render('index', { songs, search, currentPage, totalPages, totalCount, pageSize, hasPrev, hasNext });
 });
 
 app.get('/songs/:slug', (req, res) => {
@@ -399,15 +422,10 @@ app.get('/admin', requireAuth, (req, res) => {
   const search = (req.query.search as string) || '';
   const dbError = (req.query.db_error as string) || null;
   const dbSuccess = (req.query.db_success as string) || null;
-  let songs: Song[];
-  if (search) {
-    songs = db.prepare(
-      'SELECT * FROM songs WHERE title LIKE ? OR artist LIKE ? ORDER BY title ASC'
-    ).all(`%${search}%`, `%${search}%`) as Song[];
-  } else {
-    songs = db.prepare('SELECT * FROM songs ORDER BY title ASC').all() as Song[];
-  }
-  res.render('admin', { songs, search, dbError, dbSuccess });
+  const requestedPage = parseInt(req.query.page as string, 10) || 1;
+  const requestedPageSize = parseInt(req.query.pageSize as string, 10) || DEFAULT_SONGS_PER_PAGE;
+  const { songs, currentPage, totalPages, totalCount, pageSize, hasPrev, hasNext } = getPaginatedSongs(search, requestedPage, requestedPageSize);
+  res.render('admin', { songs, search, dbError, dbSuccess, currentPage, totalPages, totalCount, pageSize, hasPrev, hasNext });
 });
 
 app.get('/admin/songs/new', requireAuth, (req, res) => {

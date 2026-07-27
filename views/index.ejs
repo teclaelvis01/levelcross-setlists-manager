@@ -8,6 +8,8 @@
 <div class="search-bar">
   <form action="<%= (typeof baseUrl !== 'undefined' ? baseUrl : '') %>/" method="GET">
     <input type="text" name="search" placeholder="Buscar canción..." value="<%= search %>">
+    <input type="hidden" name="page" value="1">
+    <input type="hidden" name="pageSize" value="<%= pageSize || 12 %>">
     <button type="submit" class="btn">🔍 Buscar</button>
   </form>
 </div>
@@ -20,6 +22,10 @@
     <% } %>
   </div>
 <% } else { %>
+  <div class="results-meta">
+    <p>Mostrando <%= songs.length %> de <%= totalCount %> canciones</p>
+  </div>
+
   <div class="song-list">
     <% songs.forEach(song => { %>
       <a href="<%= (typeof baseUrl !== 'undefined' ? baseUrl : '') %>/songs/<%= song.slug %>" class="song-card">
@@ -40,6 +46,29 @@
       </a>
     <% }) %>
   </div>
+
+  <% if (typeof totalPages !== 'undefined' && totalPages > 1) { %>
+    <div class="pagination">
+      <a href="<%= (typeof baseUrl !== 'undefined' ? baseUrl : '') %>/?search=<%= encodeURIComponent(search) %>&page=<%= currentPage - 1 %>&pageSize=<%= pageSize %>" class="btn btn-secondary <%= hasPrev ? '' : 'is-disabled' %>">
+        ← Anterior
+      </a>
+      <div class="pagination__pages">
+        <% for (let pageNumber = Math.max(1, currentPage - 1); pageNumber <= Math.min(totalPages, currentPage + 1); pageNumber++) { %>
+          <a href="<%= (typeof baseUrl !== 'undefined' ? baseUrl : '') %>/?search=<%= encodeURIComponent(search) %>&page=<%= pageNumber %>&pageSize=<%= pageSize %>" class="pagination__page <%= pageNumber === currentPage ? 'is-active' : '' %>">
+            <%= pageNumber %>
+          </a>
+        <% } %>
+      </div>
+      <a href="<%= (typeof baseUrl !== 'undefined' ? baseUrl : '') %>/?search=<%= encodeURIComponent(search) %>&page=<%= currentPage + 1 %>&pageSize=<%= pageSize %>" class="btn btn-secondary <%= hasNext ? '' : 'is-disabled' %>">
+        Siguiente →
+      </a>
+      <select class="page-size-select" onchange="window.location.href='<%= (typeof baseUrl !== 'undefined' ? baseUrl : '') %>/?search=<%= encodeURIComponent(search) %>&page=1&pageSize=' + this.value">
+        <option value="5" <%= pageSize === 5 ? 'selected' : '' %>>5 por página</option>
+        <option value="10" <%= pageSize === 10 ? 'selected' : '' %>>10 por página</option>
+        <option value="50" <%= pageSize === 50 ? 'selected' : '' %>>50 por página</option>
+      </select>
+    </div>
+  <% } %>
 <% } %>
 
 <%- include('partials/foot') %>
