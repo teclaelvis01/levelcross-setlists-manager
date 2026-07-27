@@ -171,6 +171,8 @@ Desde el panel de administración (`/admin`):
 | `PORT` | `3000` | Puerto del servidor |
 | `BASE_URL` | `''` | Prefijo de ruta para desplegar bajo subdirectorio |
 | `SESSION_SECRET` | Valor fijo por defecto | Secreto para firmar cookies de sesión (cambiar en producción) |
+| `DEFAULT_ADMIN_USERNAME` | `admin` | Usuario administrador por defecto creado al iniciar una base de datos nueva |
+| `DEFAULT_ADMIN_PASSWORD` | `admin` | Contraseña del usuario administrador por defecto creado al iniciar una base de datos nueva |
 
 ## 📝 Formato de letras (ChartPro)
 

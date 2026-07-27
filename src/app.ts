@@ -289,6 +289,25 @@ app.get('/logout', (req, res) => {
   });
 });
 
+app.get('/health', (_req, res) => {
+  try {
+    const result = db.prepare('SELECT 1 as ok').get() as { ok: number } | undefined;
+    const isHealthy = !!result && result.ok === 1;
+    res.status(isHealthy ? 200 : 500).json({
+      status: isHealthy ? 'ok' : 'error',
+      database: isHealthy ? 'connected' : 'unavailable',
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    res.status(500).json({
+      status: 'error',
+      database: 'unavailable',
+      error: error instanceof Error ? error.message : 'unknown error',
+      timestamp: new Date().toISOString(),
+    });
+  }
+});
+
 // ── Admin (Private) Routes ──
 
 app.get('/admin', requireAuth, (req, res) => {

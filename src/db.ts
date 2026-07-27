@@ -1,6 +1,7 @@
 import Database = require('better-sqlite3');
 import path from 'path';
 import fs from 'fs';
+import bcrypt from 'bcryptjs';
 
 const dbPath = path.join(__dirname, '..', 'data', 'setlists.db');
 
@@ -53,5 +54,15 @@ try { db.exec('DROP INDEX IF EXISTS songs_title_unique'); } catch {}
 try { db.exec('DROP INDEX IF EXISTS sqlite_autoindex_songs_1'); } catch {}
 // Ensure we have a unique index on slug
 try { db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_songs_slug ON songs(slug)'); } catch {}
+
+// Ensure a default admin user exists for fresh deployments.
+// This keeps the initial login flow working even when the database was just created.
+const defaultAdminUsername = process.env.DEFAULT_ADMIN_USERNAME || 'admin';
+const defaultAdminPassword = process.env.DEFAULT_ADMIN_PASSWORD || 'admin';
+const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get() as { count: number };
+if (userCount.count === 0) {
+  const passwordHash = bcrypt.hashSync(defaultAdminPassword, 10);
+  db.prepare('INSERT INTO users (username, password_hash) VALUES (?, ?)').run(defaultAdminUsername, passwordHash);
+}
 
 export default db;
