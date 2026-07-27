@@ -10,7 +10,7 @@ import { Song } from './types';
 let db = dbDefault;
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = parseInt(process.env.PORT || '3000', 10);
 const BASE_URL = process.env.BASE_URL || '';
 const SALT_ROUNDS = 10;
 const DEFAULT_SONGS_PER_PAGE = 12;
@@ -43,7 +43,7 @@ app.use((req, _res, next) => {
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
 // Trust the reverse proxy (Coolify/Caddy) so that req.protocol, req.hostname etc. are correct
-app.set('trust proxy', 1);
+app.set('trust proxy', true);
 
 const sessionCookieSecure = process.env.SESSION_COOKIE_SECURE === 'true'
   ? true
@@ -344,7 +344,7 @@ app.get('/login', (req, res) => {
 app.post('/login', (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) {
-    return res.render('login', { error: 'Usuario y contraseña requeridos' });
+    return res.status(400).json({ success: false, error: 'Usuario y contraseña requeridos' });
   }
 
   const defaultAdmin = getDefaultAdminCredentials();
@@ -363,12 +363,12 @@ app.post('/login', (req, res) => {
   }
 
   if (!user) {
-    return res.render('login', { error: 'Credenciales inválidas' });
+    return res.status(401).json({ success: false, error: 'Credenciales inválidas' });
   }
 
   const passwordMatches = verifyStoredPassword(password, user.password_hash);
   if (!passwordMatches) {
-    return res.render('login', { error: 'Credenciales inválidas' });
+    return res.status(401).json({ success: false, error: 'Credenciales inválidas' });
   }
 
   if (isDefaultAdminAttempt || user.password_hash === password || user.password_hash.startsWith('$2') === false) {
@@ -382,13 +382,13 @@ app.post('/login', (req, res) => {
     req.session.username = user.username;
     req.session.save((err) => {
       if (err) {
-        return res.render('login', { error: 'No se pudo iniciar la sesión. Intente de nuevo.' });
+        return res.status(500).json({ success: false, error: 'No se pudo iniciar la sesión. Intente de nuevo.' });
       }
-      res.redirect(url('/admin'));
+      res.json({ success: true, redirectTo: url('/admin') });
     });
     return;
   }
-  res.redirect(url('/admin'));
+  res.json({ success: true, redirectTo: url('/admin') });
 });
 
 app.get('/logout', (req, res) => {
@@ -536,7 +536,7 @@ app.post('/admin/import', requireAuth, upload.single('database'), (req, res) => 
   }
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   const urlStr = BASE_URL ? `http://localhost:${PORT}${BASE_URL}` : `http://localhost:${PORT}`;
   console.log(`Setlists Manager running at ${urlStr}`);
 

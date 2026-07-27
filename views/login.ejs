@@ -5,11 +5,9 @@
     <h1>🔐 Iniciar Sesión</h1>
     <p class="auth-desc">Accede para gestionar el setlist.</p>
 
-    <% if (typeof error !== 'undefined' && error) { %>
-      <div class="alert alert-error"><%= error %></div>
-    <% } %>
+    <div id="loginError" class="alert alert-error" style="display: none;"></div>
 
-    <form action="<%= (typeof baseUrl !== 'undefined' ? baseUrl : '') %>/login" method="POST" class="auth-form">
+    <form id="loginForm" class="auth-form">
       <div class="form-group">
         <label for="username">Usuario</label>
         <input type="text" id="username" name="username" required placeholder="admin" autocomplete="username">
@@ -18,9 +16,49 @@
         <label for="password">Contraseña</label>
         <input type="password" id="password" name="password" required placeholder="••••" autocomplete="current-password">
       </div>
-      <button type="submit" class="btn btn-primary btn-full">Ingresar</button>
+      <button type="submit" class="btn btn-primary btn-full" id="loginBtn">Ingresar</button>
     </form>
   </div>
 </div>
+
+<script>
+  const baseUrl = '<%= (typeof baseUrl !== "undefined" ? baseUrl : "") %>';
+  const loginForm = document.getElementById('loginForm');
+  const loginError = document.getElementById('loginError');
+  const loginBtn = document.getElementById('loginBtn');
+
+  loginForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    loginError.style.display = 'none';
+    loginBtn.disabled = true;
+    loginBtn.textContent = 'Ingresando...';
+
+    try {
+      const response = await fetch(baseUrl + '/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: document.getElementById('username').value,
+          password: document.getElementById('password').value,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        window.location.href = data.redirectTo;
+      } else {
+        loginError.textContent = data.error || 'Error desconocido';
+        loginError.style.display = 'block';
+      }
+    } catch (error) {
+      loginError.textContent = 'Error de conexión. Intente de nuevo.';
+      loginError.style.display = 'block';
+    } finally {
+      loginBtn.disabled = false;
+      loginBtn.textContent = 'Ingresar';
+    }
+  });
+</script>
 
 <%- include('partials/foot') %>
