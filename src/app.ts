@@ -145,8 +145,8 @@ function requireAuth(req: express.Request, res: express.Response, next: express.
 
 // Make user info available to all views
 app.use((req, _res, next) => {
-  app.locals.isAuthenticated = !!req.session.userId;
-  app.locals.username = req.session.username || '';
+  app.locals.isAuthenticated = !!(req.session && req.session.userId);
+  app.locals.username = (req.session && req.session.username) || '';
   next();
 });
 
