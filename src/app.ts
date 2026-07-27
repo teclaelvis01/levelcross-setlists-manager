@@ -363,6 +363,11 @@ app.get('/admin/export', requireAuth, (req, res) => {
   if (!fs.existsSync(dbPath)) {
     return res.status(404).send('Base de datos no encontrada');
   }
+  try {
+    db.pragma('wal_checkpoint(TRUNCATE)');
+  } catch {
+    // Si el checkpoint falla, seguimos adelante con la copia actual.
+  }
   const dateStr = new Date().toISOString().split('T')[0];
   res.download(dbPath, `setlists-backup-${dateStr}.db`);
 });
@@ -393,16 +398,17 @@ app.post('/admin/import', requireAuth, upload.single('database'), (req, res) => 
       return res.redirect(url('/admin?db_error=El+archivo+no+es+una+base+de+datos+válida+(debe+contener+las+tablas+songs+y+users)'));
     }
     testDb.close();
-    fs.copyFileSync(uploadedPath, dbPath);
-    fs.unlinkSync(uploadedPath);
     db.close();
+    fs.copyFileSync(uploadedPath, dbPath);
+    try { fs.unlinkSync(dbPath + '-wal'); } catch {}
+    try { fs.unlinkSync(dbPath + '-shm'); } catch {}
+    fs.unlinkSync(uploadedPath);
     db = openDatabase();
     res.redirect(url('/admin?db_success=Base+de+datos+importada+correctamente.+Reinicia+el+servidor+para+que+los+cambios+surtan+efecto+completo.'));
   } catch (err) {
     try { fs.unlinkSync(uploadedPath); } catch {}
     try {
-      delete require.cache[require.resolve('./db')];
-      require('./db');
+      db = openDatabase();
     } catch {}
     res.redirect(url('/admin?db_error=Error+al+importar:+'+encodeURIComponent((err as Error).message)));
   }
