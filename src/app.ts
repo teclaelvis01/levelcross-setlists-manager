@@ -41,13 +41,19 @@ app.use(express.static(path.join(__dirname, '..', 'public')));
 // Trust the reverse proxy (Coolify/Caddy) so that req.protocol, req.hostname etc. are correct
 app.set('trust proxy', 1);
 
+const sessionCookieSecure = process.env.SESSION_COOKIE_SECURE === 'true'
+  ? true
+  : process.env.SESSION_COOKIE_SECURE === 'false'
+  ? false
+  : 'auto';
+
 app.use(session({
   secret: process.env.SESSION_SECRET || 'setlists-manager-secret-change-in-production',
   resave: true,
   saveUninitialized: true,
   cookie: {
     httpOnly: true,
-    secure: true, // Coolify sirve sobre HTTPS
+    secure: sessionCookieSecure,
     sameSite: 'lax',
     maxAge: 24 * 60 * 60 * 1000, // 24 hours
     path: BASE_URL || '/',
