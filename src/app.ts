@@ -52,6 +52,7 @@ const sessionCookieSecure = process.env.SESSION_COOKIE_SECURE === 'true'
   : process.env.NODE_ENV === 'production';
 
 app.use(session({
+  name: 'setlists_session',
   secret: process.env.SESSION_SECRET || 'setlists-manager-secret-change-in-production',
   resave: true,
   saveUninitialized: true,
