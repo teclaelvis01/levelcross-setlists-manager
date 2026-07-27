@@ -38,13 +38,16 @@ app.use((req, _res, next) => {
 // Static files (served at / regardless of BASE_URL)
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
+// Trust the reverse proxy (Coolify/Caddy) so that req.protocol, req.hostname etc. are correct
+app.set('trust proxy', 1);
+
 app.use(session({
   secret: process.env.SESSION_SECRET || 'setlists-manager-secret-change-in-production',
-  resave: false,
-  saveUninitialized: false,
+  resave: true,
+  saveUninitialized: true,
   cookie: {
     httpOnly: true,
-    secure: false, // set to true if using HTTPS
+    secure: true, // Coolify sirve sobre HTTPS
     sameSite: 'lax',
     maxAge: 24 * 60 * 60 * 1000, // 24 hours
     path: BASE_URL || '/',
