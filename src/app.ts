@@ -22,8 +22,21 @@ const upload = multer({ dest: path.join(__dirname, '..', 'data', 'uploads') });
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
-// Static files under base path (Coolify/Caddy does NOT strip the prefix)
-app.use(BASE_URL, express.static(path.join(__dirname, '..', 'public')));
+// ── BASE_URL prefix middleware ──
+// Strips the BASE_URL prefix from the request path so that all internal routes
+// can be defined at / regardless of whether the reverse proxy (Coolify/Caddy)
+// forwards the full path with prefix or strips it.
+// This makes the app work in both scenarios.
+app.use((req, _res, next) => {
+  if (BASE_URL && req.url.startsWith(BASE_URL)) {
+    req.url = req.url.slice(BASE_URL.length);
+    if (req.url === '') req.url = '/';
+  }
+  next();
+});
+
+// Static files (served at / regardless of BASE_URL)
+app.use(express.static(path.join(__dirname, '..', 'public')));
 
 app.use(session({
   secret: process.env.SESSION_SECRET || 'setlists-manager-secret-change-in-production',
@@ -52,27 +65,22 @@ function slugify(text: string): string {
   return text
     .toLowerCase()
     .trim()
-    .replace(/[^\w\s-]/g, '')  // remove non-word chars (except spaces and hyphens)
-    .replace(/[\s_]+/g, '-')   // replace spaces/underscores with hyphens
-    .replace(/-+/g, '-')       // collapse multiple hyphens
-    .replace(/^-+|-+$/g, '');  // trim leading/trailing hyphens
+    .replace(/[^\w\s-]/g, '')
+    .replace(/[\s_]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '');
 }
 
 function generateUniqueSlug(title: string, excludeId?: number): string {
   let slug = slugify(title);
   if (!slug) slug = 'untitled';
-
-  // If the slug doesn't exist, return it
   let existing: Song | undefined;
   if (excludeId) {
     existing = db.prepare('SELECT * FROM songs WHERE slug = ? AND id != ?').get(slug, excludeId) as Song | undefined;
   } else {
     existing = db.prepare('SELECT * FROM songs WHERE slug = ?').get(slug) as Song | undefined;
   }
-
   if (!existing) return slug;
-
-  // Add suffix until unique
   let counter = 1;
   while (true) {
     const candidate = `${slug}-${counter}`;
@@ -143,7 +151,6 @@ function requireAuth(req: express.Request, res: express.Response, next: express.
   next();
 }
 
-// Make user info available to all views
 app.use((req, _res, next) => {
   if (req.session) {
     app.locals.isAuthenticated = !!req.session.userId;
@@ -155,23 +162,22 @@ app.use((req, _res, next) => {
   next();
 });
 
-// ── Route helper: prefix all routes with BASE_URL ──
+// ── URL helper for redirects ──
 
-function r(path: string): string {
+function url(path: string): string {
   return BASE_URL + path;
 }
 
 // ── Public Routes ──
 
-// Routes are registered with BASE_URL prefix because reverse proxies
-// like Coolify/Caddy do NOT strip the subpath before forwarding.
-// Example: with BASE_URL=/setlist-2026, a request to /setlist-2026/setup
-// arrives as /setlist-2026/setup, so Express must match that path.
+// All routes are defined at / (root). The BASE_URL middleware above strips
+// the prefix from the request path before these routes are matched, so the
+// app works regardless of whether the reverse proxy forwards the full path
+// or strips the prefix.
 
-// GET / - Public song list (redirects to setup if no admin user)
-app.get(r('/'), (req, res) => {
+app.get('/', (req, res) => {
   if (!isSetupComplete()) {
-    return res.redirect(r('/setup'));
+    return res.redirect(url('/setup'));
   }
   const search = (req.query.search as string) || '';
   let songs: Song[];
@@ -185,10 +191,9 @@ app.get(r('/'), (req, res) => {
   res.render('index', { songs, search });
 });
 
-// GET /songs/:slug - Public song viewer by slug
-app.get(r('/songs/:slug'), (req, res) => {
+app.get('/songs/:slug', (req, res) => {
   if (!isSetupComplete()) {
-    return res.redirect(r('/setup'));
+    return res.redirect(url('/setup'));
   }
   const song = db.prepare('SELECT * FROM songs WHERE slug = ?').get(req.params.slug) as Song | undefined;
   if (!song) {
@@ -204,18 +209,16 @@ function isSetupComplete(): boolean {
   return user.count > 0;
 }
 
-// GET /setup - Initial setup form (only if no admin user exists)
-app.get(r('/setup'), (req, res) => {
+app.get('/setup', (req, res) => {
   if (isSetupComplete()) {
-    return res.redirect(r('/login'));
+    return res.redirect(url('/login'));
   }
   res.render('setup', { error: null });
 });
 
-// POST /setup - Create admin user
-app.post(r('/setup'), (req, res) => {
+app.post('/setup', (req, res) => {
   if (isSetupComplete()) {
-    return res.redirect(r('/login'));
+    return res.redirect(url('/login'));
   }
   const { username, password, confirm_password } = req.body;
   if (!username || !password || !confirm_password) {
@@ -234,25 +237,23 @@ app.post(r('/setup'), (req, res) => {
       req.session.userId = 1;
       req.session.username = username;
     }
-    res.redirect(r('/admin'));
+    res.redirect(url('/admin'));
   } catch {
     res.render('setup', { error: 'Error al crear el usuario. Intente de nuevo.' });
   }
 });
 
-// GET /login - Login form
-app.get(r('/login'), (req, res) => {
+app.get('/login', (req, res) => {
   if (req.session && req.session.userId) {
-    return res.redirect(r('/admin'));
+    return res.redirect(url('/admin'));
   }
   if (!isSetupComplete()) {
-    return res.redirect(r('/setup'));
+    return res.redirect(url('/setup'));
   }
   res.render('login', { error: null });
 });
 
-// POST /login - Authenticate
-app.post(r('/login'), (req, res) => {
+app.post('/login', (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) {
     return res.render('login', { error: 'Usuario y contraseña requeridos' });
@@ -268,20 +269,18 @@ app.post(r('/login'), (req, res) => {
     req.session.userId = user.id;
     req.session.username = user.username;
   }
-  res.redirect(r('/admin'));
+  res.redirect(url('/admin'));
 });
 
-// GET /logout
-app.get(r('/logout'), (req, res) => {
+app.get('/logout', (req, res) => {
   req.session.destroy(() => {
-    res.redirect(r('/'));
+    res.redirect(url('/'));
   });
 });
 
 // ── Admin (Private) Routes ──
 
-// GET /admin - Admin panel / song management
-app.get(r('/admin'), requireAuth, (req, res) => {
+app.get('/admin', requireAuth, (req, res) => {
   const search = (req.query.search as string) || '';
   const dbError = (req.query.db_error as string) || null;
   const dbSuccess = (req.query.db_success as string) || null;
@@ -296,29 +295,24 @@ app.get(r('/admin'), requireAuth, (req, res) => {
   res.render('admin', { songs, search, dbError, dbSuccess });
 });
 
-// GET /admin/songs/new - Create form
-app.get(r('/admin/songs/new'), requireAuth, (req, res) => {
+app.get('/admin/songs/new', requireAuth, (req, res) => {
   res.render('form', { song: null, admin: true });
 });
 
-// POST /admin/songs - Create song
-app.post(r('/admin/songs'), requireAuth, (req, res) => {
+app.post('/admin/songs', requireAuth, (req, res) => {
   const { title, artist, lyrics, audio_url } = req.body;
   if (!title || !title.trim()) {
     return res.status(400).send('El título es requerido');
   }
-
   const cleanTitle = title.trim();
   const slug = generateUniqueSlug(cleanTitle);
-
   db.prepare(
     'INSERT INTO songs (title, slug, artist, lyrics, audio_url) VALUES (?, ?, ?, ?, ?)'
   ).run(cleanTitle, slug, (artist || '').trim(), lyrics || '', (audio_url || '').trim());
-  res.redirect(r('/admin'));
+  res.redirect(url('/admin'));
 });
 
-// GET /admin/songs/:slug/edit - Edit form
-app.get(r('/admin/songs/:slug/edit'), requireAuth, (req, res) => {
+app.get('/admin/songs/:slug/edit', requireAuth, (req, res) => {
   const song = db.prepare('SELECT * FROM songs WHERE slug = ?').get(req.params.slug) as Song | undefined;
   if (!song) {
     return res.status(404).send('Canción no encontrada');
@@ -326,42 +320,34 @@ app.get(r('/admin/songs/:slug/edit'), requireAuth, (req, res) => {
   res.render('form', { song, admin: true });
 });
 
-// POST /admin/songs/:slug - Update song
-app.post(r('/admin/songs/:slug'), requireAuth, (req, res) => {
+app.post('/admin/songs/:slug', requireAuth, (req, res) => {
   const { title, artist, lyrics, audio_url } = req.body;
   if (!title || !title.trim()) {
     return res.status(400).send('El título es requerido');
   }
-
   const existing = db.prepare('SELECT * FROM songs WHERE slug = ?').get(req.params.slug) as Song | undefined;
   if (!existing) {
     return res.status(404).send('Canción no encontrada');
   }
-
   const cleanTitle = title.trim();
   let slug = existing.slug;
-  // Only regenerate slug if title changed
   if (cleanTitle !== existing.title) {
     slug = generateUniqueSlug(cleanTitle, existing.id);
   }
-
-  // Update slug in case title changed
   db.prepare(
     'UPDATE songs SET title = ?, slug = ?, artist = ?, lyrics = ?, audio_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?'
   ).run(cleanTitle, slug, (artist || '').trim(), lyrics || '', (audio_url || '').trim(), existing.id);
-  res.redirect(r('/admin'));
+  res.redirect(url('/admin'));
 });
 
-// POST /admin/songs/:slug/delete - Delete song
-app.post(r('/admin/songs/:slug/delete'), requireAuth, (req, res) => {
+app.post('/admin/songs/:slug/delete', requireAuth, (req, res) => {
   db.prepare('DELETE FROM songs WHERE slug = ?').run(req.params.slug);
-  res.redirect(r('/admin'));
+  res.redirect(url('/admin'));
 });
 
 // ── Database Backup Routes ──
 
-// GET /admin/export - Download the SQLite database file
-app.get(r('/admin/export'), requireAuth, (req, res) => {
+app.get('/admin/export', requireAuth, (req, res) => {
   const dbPath = path.join(__dirname, '..', 'data', 'setlists.db');
   if (!fs.existsSync(dbPath)) {
     return res.status(404).send('Base de datos no encontrada');
@@ -370,63 +356,45 @@ app.get(r('/admin/export'), requireAuth, (req, res) => {
   res.download(dbPath, `setlists-backup-${dateStr}.db`);
 });
 
-// POST /admin/import - Upload a SQLite database file to replace current one
-app.post(r('/admin/import'), requireAuth, upload.single('database'), (req, res) => {
+app.post('/admin/import', requireAuth, upload.single('database'), (req, res) => {
   if (!req.file) {
-    return res.redirect(r('/admin?db_error=No+se+seleccionó+ningún+archivo'));
+    return res.redirect(url('/admin?db_error=No+se+seleccionó+ningún+archivo'));
   }
-
   const dbPath = path.join(__dirname, '..', 'data', 'setlists.db');
   const uploadedPath = req.file.path;
-
-  // Validate file extension
   const validExts = ['.db', '.sqlite', '.sqlite3'];
   const ext = path.extname(req.file.originalname).toLowerCase();
   if (!validExts.includes(ext)) {
     fs.unlinkSync(uploadedPath);
-    return res.redirect(r('/admin?db_error=El+archivo+debe+tener+extensión+.db+,+.sqlite+o+.sqlite3'));
+    return res.redirect(url('/admin?db_error=El+archivo+debe+tener+extensión+.db+,+.sqlite+o+.sqlite3'));
   }
-
-  // Validate file size (max 50MB)
   if (req.file.size > 50 * 1024 * 1024) {
     fs.unlinkSync(uploadedPath);
-    return res.redirect(r('/admin?db_error=El+archivo+es+demasiado+grande+(máximo+50MB)'));
+    return res.redirect(url('/admin?db_error=El+archivo+es+demasiado+grande+(máximo+50MB)'));
   }
-
   try {
-    // Test that the uploaded file is a valid SQLite database
     const testDb = require('better-sqlite3')(uploadedPath);
     testDb.pragma('journal_mode = WAL');
-    // Verify it has the required tables
     const tables = testDb.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('songs', 'users')").all() as { name: string }[];
     if (tables.length < 2) {
       testDb.close();
       fs.unlinkSync(uploadedPath);
-      return res.redirect(r('/admin?db_error=El+archivo+no+es+una+base+de+datos+válida+(debe+contener+las+tablas+songs+y+users)'));
+      return res.redirect(url('/admin?db_error=El+archivo+no+es+una+base+de+datos+válida+(debe+contener+las+tablas+songs+y+users)'));
     }
     testDb.close();
-
-    // Close current db connection
     db.close();
-
-    // Replace database file
     fs.copyFileSync(uploadedPath, dbPath);
     fs.unlinkSync(uploadedPath);
-
-    // Reload database module
     delete require.cache[require.resolve('./db')];
     require('./db');
-
-    res.redirect(r('/admin?db_success=Base+de+datos+importada+correctamente.+Reinicia+el+servidor+para+que+los+cambios+surtan+efecto+completo.'));
+    res.redirect(url('/admin?db_success=Base+de+datos+importada+correctamente.+Reinicia+el+servidor+para+que+los+cambios+surtan+efecto+completo.'));
   } catch (err) {
-    // Clean up temp file
     try { fs.unlinkSync(uploadedPath); } catch {}
-    // Re-open db if it was closed
     try {
       delete require.cache[require.resolve('./db')];
       require('./db');
     } catch {}
-    res.redirect(r('/admin?db_error=Error+al+importar:+'+encodeURIComponent((err as Error).message)));
+    res.redirect(url('/admin?db_error=Error+al+importar:+'+encodeURIComponent((err as Error).message)));
   }
 });
 
@@ -434,7 +402,6 @@ app.listen(PORT, () => {
   const urlStr = BASE_URL ? `http://localhost:${PORT}${BASE_URL}` : `http://localhost:${PORT}`;
   console.log(`Setlists Manager running at ${urlStr}`);
 
-  // Migration: assign slugs to existing songs that don't have one
   const songsWithoutSlug = db.prepare('SELECT * FROM songs WHERE slug IS NULL OR slug = \'\'').all() as Song[];
   for (const song of songsWithoutSlug) {
     const slug = generateUniqueSlug(song.title);

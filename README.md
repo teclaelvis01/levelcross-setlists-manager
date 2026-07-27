@@ -49,6 +49,25 @@ Al iniciar por primera vez sin usuarios registrados:
 
 ## 🐳 Docker
 
+### docker-compose (recomendado para producción)
+
+Usa `docker-compose.prod.yml` para levantar la aplicación con persistencia de datos:
+
+```bash
+# Sin subpath (raíz)
+docker compose -f docker-compose.prod.yml up -d
+
+# Con subpath (ej. /setlist-2026)
+BASE_URL=/setlist-2026 docker compose -f docker-compose.prod.yml up -d
+
+# Con session secret personalizado
+SESSION_SECRET=tu-secreto BASE_URL=/setlist-2026 docker compose -f docker-compose.prod.yml up -d
+```
+
+La base de datos se persiste en un volumen Docker (`data`) automáticamente.
+
+### docker CLI
+
 ```bash
 # Construir la imagen
 docker build -t setlists-manager .
@@ -57,8 +76,6 @@ docker build -t setlists-manager .
 docker run -d -p 3000:3000 -v setlists-data:/app/data setlists-manager
 ```
 
-La base de datos se persiste en el volumen `setlists-data`.
-
 ### Despliegue bajo subpath (Coolify, nginx, etc.)
 
 Si la aplicación se despliega bajo un subdirectorio (por ejemplo `https://dominio.com/mi-application/`), usa la variable de entorno `BASE_URL`:
@@ -66,10 +83,10 @@ Si la aplicación se despliega bajo un subdirectorio (por ejemplo `https://domin
 #### En Coolify
 
 1. Ve al dashboard de tu servicio en Coolify
-2. En la sección **Environment Variables**, agrega: `BASE_URL=/mi-application`
+2. En la sección **Environment Variables**, agrega: `BASE_URL=/setlist-2026`
 3. Haz clic en **Redeploy**
 
-Solo eso. Coolify reconstruye la imagen con la variable y el reverse proxy enruta el tráfico automáticamente. No necesitas configurar nada adicional.
+Solo eso. La aplicación detecta automáticamente el prefijo y responde en `https://dominio.com/setlist-2026/`.
 
 #### En docker CLI
 

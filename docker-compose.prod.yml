@@ -1,0 +1,16 @@
+services:
+  app-setlist:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - BASE_URL=${BASE_URL:-}
+      - SESSION_SECRET=${SESSION_SECRET:-}
+    volumes:
+      - data:/app/data
+    restart: unless-stopped
+
+volumes:
+  data:
