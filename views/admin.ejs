@@ -1,0 +1,78 @@
+<%- include('partials/head') %>
+
+<div class="page-header">
+  <div>
+    <h1>📋 Admin</h1>
+    <p class="page-subtitle">Gestiona las canciones del setlist</p>
+  </div>
+  <a href="/admin/songs/new" class="btn btn-primary">+ Nueva Canción</a>
+</div>
+
+<div class="search-bar">
+  <form action="/admin" method="GET">
+    <input type="text" name="search" placeholder="Buscar canción..." value="<%= search %>">
+    <button type="submit" class="btn">🔍 Buscar</button>
+  </form>
+</div>
+
+<% if (typeof dbSuccess !== 'undefined' && dbSuccess) { %>
+  <div class="alert alert-success"><%= dbSuccess %></div>
+<% } %>
+<% if (typeof dbError !== 'undefined' && dbError) { %>
+  <div class="alert alert-error"><%= dbError %></div>
+<% } %>
+
+<% if (songs.length === 0) { %>
+  <div class="empty-state">
+    <p>No hay canciones aún</p>
+    <a href="/admin/songs/new" class="btn btn-primary">+ Crear primera canción</a>
+  </div>
+<% } else { %>
+  <div class="song-list admin-list">
+    <% songs.forEach(song => { %>
+      <div class="song-card">
+        <a href="/songs/<%= song.slug %>" class="song-card__link">
+          <div class="song-card__info">
+            <h3><%= song.title %></h3>
+            <% if (song.artist) { %>
+              <p class="song-card__artist"><%= song.artist %></p>
+            <% } %>
+          </div>
+        </a>
+        <div class="song-card__actions">
+          <% if (song.audio_url) { %>
+            <a href="<%= song.audio_url %>" target="_blank" rel="noopener noreferrer" class="btn btn-icon" title="Escuchar">
+              🔊
+            </a>
+          <% } %>
+          <a href="/admin/songs/<%= song.slug %>/edit" class="btn btn-icon" title="Editar">
+            ✏️
+          </a>
+          <form action="/admin/songs/<%= song.slug %>/delete" method="POST" class="inline-form" onsubmit="return confirm('¿Eliminar esta canción?')">
+            <button type="submit" class="btn btn-icon btn-danger" title="Eliminar">🗑️</button>
+          </form>
+        </div>
+      </div>
+    <% }) %>
+  </div>
+<% } %>
+
+<hr class="section-divider">
+
+<div class="backup-section">
+  <h2>💾 Backup de Base de Datos</h2>
+  <p class="backup-desc">Exporta o importa la base de datos SQLite completa para hacer copias de seguridad o restaurar datos.</p>
+  <div class="backup-actions">
+    <a href="/admin/export" class="btn btn-primary">
+      ⬇️ Exportar DB
+    </a>
+    <form action="/admin/import" method="POST" enctype="multipart/form-data" class="inline-form">
+      <label class="btn btn-secondary import-label">
+        📤 Importar DB
+        <input type="file" name="database" accept=".db,.sqlite,.sqlite3" required hidden onchange="this.form.submit()">
+      </label>
+    </form>
+  </div>
+</div>
+
+<%- include('partials/foot') %>

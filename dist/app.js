@@ -1,0 +1,382 @@
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = __importDefault(require("express"));
+const express_session_1 = __importDefault(require("express-session"));
+const path_1 = __importDefault(require("path"));
+const bcryptjs_1 = __importDefault(require("bcryptjs"));
+const multer_1 = __importDefault(require("multer"));
+const fs_1 = __importDefault(require("fs"));
+const db_1 = __importDefault(require("./db"));
+const app = (0, express_1.default)();
+const PORT = process.env.PORT || 3000;
+const SALT_ROUNDS = 10;
+// Multer config for file uploads (import DB)
+const upload = (0, multer_1.default)({ dest: path_1.default.join(__dirname, '..', 'data', 'uploads') });
+// Middleware
+app.use(express_1.default.urlencoded({ extended: true }));
+app.use(express_1.default.json());
+app.use(express_1.default.static(path_1.default.join(__dirname, '..', 'public')));
+app.use((0, express_session_1.default)({
+    secret: process.env.SESSION_SECRET || 'setlists-manager-secret-change-in-production',
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+        httpOnly: true,
+        secure: false, // set to true if using HTTPS
+        sameSite: 'lax',
+        maxAge: 24 * 60 * 60 * 1000, // 24 hours
+    },
+}));
+// View engine
+app.set('view engine', 'ejs');
+app.set('views', path_1.default.join(__dirname, '..', 'views'));
+// ── Helpers ──
+function escapeHtml(text) {
+    return text.replace(/&/g, '&').replace(/</g, '<').replace(/>/g, '>');
+}
+function slugify(text) {
+    return text
+        .toLowerCase()
+        .trim()
+        .replace(/[^\w\s-]/g, '') // remove non-word chars (except spaces and hyphens)
+        .replace(/[\s_]+/g, '-') // replace spaces/underscores with hyphens
+        .replace(/-+/g, '-') // collapse multiple hyphens
+        .replace(/^-+|-+$/g, ''); // trim leading/trailing hyphens
+}
+function generateUniqueSlug(title, excludeId) {
+    let slug = slugify(title);
+    if (!slug)
+        slug = 'untitled';
+    // If the slug doesn't exist, return it
+    let existing;
+    if (excludeId) {
+        existing = db_1.default.prepare('SELECT * FROM songs WHERE slug = ? AND id != ?').get(slug, excludeId);
+    }
+    else {
+        existing = db_1.default.prepare('SELECT * FROM songs WHERE slug = ?').get(slug);
+    }
+    if (!existing)
+        return slug;
+    // Add suffix until unique
+    let counter = 1;
+    while (true) {
+        const candidate = `${slug}-${counter}`;
+        if (excludeId) {
+            existing = db_1.default.prepare('SELECT * FROM songs WHERE slug = ? AND id != ?').get(candidate, excludeId);
+        }
+        else {
+            existing = db_1.default.prepare('SELECT * FROM songs WHERE slug = ?').get(candidate);
+        }
+        if (!existing)
+            return candidate;
+        counter++;
+    }
+}
+function renderLyrics(lyrics) {
+    if (!lyrics)
+        return '';
+    const lines = lyrics.split('\n');
+    let html = '';
+    for (const line of lines) {
+        const trimmed = line.trim();
+        if (trimmed === '') {
+            html += '<div class="lyrics-line lyrics-line--empty">&nbsp;</div>';
+        }
+        else if (/^\[[^\]]+\]$/.test(trimmed) && !trimmed.includes('] [')) {
+            html += '<div class="lyrics-section">' + escapeHtml(trimmed) + '</div>';
+        }
+        else {
+            const parts = [];
+            let remaining = line;
+            while (remaining.length > 0) {
+                const chordMatch = remaining.match(/^\[([^\]]+)\]/);
+                if (chordMatch) {
+                    parts.push({ type: 'chord', text: chordMatch[1] });
+                    remaining = remaining.slice(chordMatch[0].length);
+                }
+                else {
+                    const nextChord = remaining.match(/\[([^\]]+)\]/);
+                    if (nextChord) {
+                        const textBefore = remaining.slice(0, nextChord.index);
+                        if (textBefore)
+                            parts.push({ type: 'text', text: textBefore });
+                        remaining = remaining.slice(nextChord.index);
+                    }
+                    else {
+                        parts.push({ type: 'text', text: remaining });
+                        remaining = '';
+                    }
+                }
+            }
+            const chordSpans = parts.map(p => p.type === 'chord'
+                ? '<span class="chord">' + escapeHtml(p.text) + '</span>'
+                : '<span class="chord"></span>');
+            const textSpans = parts.map(p => p.type === 'text'
+                ? '<span class="lyrics-text">' + escapeHtml(p.text) + '</span>'
+                : '<span class="lyrics-text"></span>');
+            html += '<div class="lyrics-line"><div class="chord-row">' + chordSpans.join('') + '</div><div class="text-row">' + textSpans.join('') + '</div></div>';
+        }
+    }
+    return html;
+}
+app.locals.renderLyrics = renderLyrics;
+// ── Auth middleware ──
+function requireAuth(req, res, next) {
+    if (!req.session.userId) {
+        return res.redirect('/login');
+    }
+    next();
+}
+// Make user info available to all views
+app.use((req, _res, next) => {
+    app.locals.isAuthenticated = !!req.session.userId;
+    app.locals.username = req.session.username || '';
+    next();
+});
+// ── Public Routes ──
+// GET / - Public song list (redirects to setup if no admin user)
+app.get('/', (req, res) => {
+    if (!isSetupComplete()) {
+        return res.redirect('/setup');
+    }
+    const search = req.query.search || '';
+    let songs;
+    if (search) {
+        songs = db_1.default.prepare('SELECT * FROM songs WHERE title LIKE ? OR artist LIKE ? ORDER BY title ASC').all(`%${search}%`, `%${search}%`);
+    }
+    else {
+        songs = db_1.default.prepare('SELECT * FROM songs ORDER BY title ASC').all();
+    }
+    res.render('index', { songs, search });
+});
+// GET /songs/:slug - Public song viewer by slug
+app.get('/songs/:slug', (req, res) => {
+    if (!isSetupComplete()) {
+        return res.redirect('/setup');
+    }
+    const song = db_1.default.prepare('SELECT * FROM songs WHERE slug = ?').get(req.params.slug);
+    if (!song) {
+        return res.status(404).send('Canción no encontrada');
+    }
+    res.render('viewer', { song });
+});
+// ── Auth Routes ──
+function isSetupComplete() {
+    const user = db_1.default.prepare('SELECT COUNT(*) as count FROM users').get();
+    return user.count > 0;
+}
+// GET /setup - Initial setup form (only if no admin user exists)
+app.get('/setup', (req, res) => {
+    if (isSetupComplete()) {
+        return res.redirect('/login');
+    }
+    res.render('setup', { error: null });
+});
+// POST /setup - Create admin user
+app.post('/setup', (req, res) => {
+    if (isSetupComplete()) {
+        return res.redirect('/login');
+    }
+    const { username, password, confirm_password } = req.body;
+    if (!username || !password || !confirm_password) {
+        return res.render('setup', { error: 'Todos los campos son requeridos' });
+    }
+    if (password !== confirm_password) {
+        return res.render('setup', { error: 'Las contraseñas no coinciden' });
+    }
+    if (password.length < 4) {
+        return res.render('setup', { error: 'La contraseña debe tener al menos 4 caracteres' });
+    }
+    const hash = bcryptjs_1.default.hashSync(password, SALT_ROUNDS);
+    try {
+        db_1.default.prepare('INSERT INTO users (username, password_hash) VALUES (?, ?)').run(username, hash);
+        req.session.userId = 1;
+        req.session.username = username;
+        res.redirect('/admin');
+    }
+    catch {
+        res.render('setup', { error: 'Error al crear el usuario. Intente de nuevo.' });
+    }
+});
+// GET /login - Login form
+app.get('/login', (req, res) => {
+    if (req.session.userId) {
+        return res.redirect('/admin');
+    }
+    if (!isSetupComplete()) {
+        return res.redirect('/setup');
+    }
+    res.render('login', { error: null });
+});
+// POST /login - Authenticate
+app.post('/login', (req, res) => {
+    const { username, password } = req.body;
+    if (!username || !password) {
+        return res.render('login', { error: 'Usuario y contraseña requeridos' });
+    }
+    const user = db_1.default.prepare('SELECT * FROM users WHERE username = ?').get(username);
+    if (!user) {
+        return res.render('login', { error: 'Credenciales inválidas' });
+    }
+    if (!bcryptjs_1.default.compareSync(password, user.password_hash)) {
+        return res.render('login', { error: 'Credenciales inválidas' });
+    }
+    req.session.userId = user.id;
+    req.session.username = user.username;
+    res.redirect('/admin');
+});
+// GET /logout
+app.get('/logout', (req, res) => {
+    req.session.destroy(() => {
+        res.redirect('/');
+    });
+});
+// ── Admin (Private) Routes ──
+// GET /admin - Admin panel / song management
+app.get('/admin', requireAuth, (req, res) => {
+    const search = req.query.search || '';
+    const dbError = req.query.db_error || null;
+    const dbSuccess = req.query.db_success || null;
+    let songs;
+    if (search) {
+        songs = db_1.default.prepare('SELECT * FROM songs WHERE title LIKE ? OR artist LIKE ? ORDER BY title ASC').all(`%${search}%`, `%${search}%`);
+    }
+    else {
+        songs = db_1.default.prepare('SELECT * FROM songs ORDER BY title ASC').all();
+    }
+    res.render('admin', { songs, search, dbError, dbSuccess });
+});
+// GET /admin/songs/new - Create form
+app.get('/admin/songs/new', requireAuth, (req, res) => {
+    res.render('form', { song: null, admin: true });
+});
+// POST /admin/songs - Create song
+app.post('/admin/songs', requireAuth, (req, res) => {
+    const { title, artist, lyrics, audio_url } = req.body;
+    if (!title || !title.trim()) {
+        return res.status(400).send('El título es requerido');
+    }
+    const cleanTitle = title.trim();
+    const slug = generateUniqueSlug(cleanTitle);
+    db_1.default.prepare('INSERT INTO songs (title, slug, artist, lyrics, audio_url) VALUES (?, ?, ?, ?, ?)').run(cleanTitle, slug, (artist || '').trim(), lyrics || '', (audio_url || '').trim());
+    res.redirect('/admin');
+});
+// GET /admin/songs/:slug/edit - Edit form
+app.get('/admin/songs/:slug/edit', requireAuth, (req, res) => {
+    const song = db_1.default.prepare('SELECT * FROM songs WHERE slug = ?').get(req.params.slug);
+    if (!song) {
+        return res.status(404).send('Canción no encontrada');
+    }
+    res.render('form', { song, admin: true });
+});
+// POST /admin/songs/:slug - Update song
+app.post('/admin/songs/:slug', requireAuth, (req, res) => {
+    const { title, artist, lyrics, audio_url } = req.body;
+    if (!title || !title.trim()) {
+        return res.status(400).send('El título es requerido');
+    }
+    const existing = db_1.default.prepare('SELECT * FROM songs WHERE slug = ?').get(req.params.slug);
+    if (!existing) {
+        return res.status(404).send('Canción no encontrada');
+    }
+    const cleanTitle = title.trim();
+    let slug = existing.slug;
+    // Only regenerate slug if title changed
+    if (cleanTitle !== existing.title) {
+        slug = generateUniqueSlug(cleanTitle, existing.id);
+    }
+    // Update slug in case title changed
+    db_1.default.prepare('UPDATE songs SET title = ?, slug = ?, artist = ?, lyrics = ?, audio_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(cleanTitle, slug, (artist || '').trim(), lyrics || '', (audio_url || '').trim(), existing.id);
+    res.redirect('/admin');
+});
+// POST /admin/songs/:slug/delete - Delete song
+app.post('/admin/songs/:slug/delete', requireAuth, (req, res) => {
+    db_1.default.prepare('DELETE FROM songs WHERE slug = ?').run(req.params.slug);
+    res.redirect('/admin');
+});
+// ── Database Backup Routes ──
+// GET /admin/export - Download the SQLite database file
+app.get('/admin/export', requireAuth, (req, res) => {
+    const dbPath = path_1.default.join(__dirname, '..', 'data', 'setlists.db');
+    if (!fs_1.default.existsSync(dbPath)) {
+        return res.status(404).send('Base de datos no encontrada');
+    }
+    const dateStr = new Date().toISOString().split('T')[0];
+    res.download(dbPath, `setlists-backup-${dateStr}.db`);
+});
+// POST /admin/import - Upload a SQLite database file to replace current one
+app.post('/admin/import', requireAuth, upload.single('database'), (req, res) => {
+    if (!req.file) {
+        return res.redirect('/admin?db_error=No+se+seleccionó+ningún+archivo');
+    }
+    const dbPath = path_1.default.join(__dirname, '..', 'data', 'setlists.db');
+    const uploadedPath = req.file.path;
+    // Validate file extension
+    const validExts = ['.db', '.sqlite', '.sqlite3'];
+    const ext = path_1.default.extname(req.file.originalname).toLowerCase();
+    if (!validExts.includes(ext)) {
+        fs_1.default.unlinkSync(uploadedPath);
+        return res.redirect('/admin?db_error=El+archivo+debe+tener+extensión+.db+,+.sqlite+o+.sqlite3');
+    }
+    // Validate file size (max 50MB)
+    if (req.file.size > 50 * 1024 * 1024) {
+        fs_1.default.unlinkSync(uploadedPath);
+        return res.redirect('/admin?db_error=El+archivo+es+demasiado+grande+(máximo+50MB)');
+    }
+    try {
+        // Test that the uploaded file is a valid SQLite database
+        const testDb = require('better-sqlite3')(uploadedPath);
+        testDb.pragma('journal_mode = WAL');
+        // Verify it has the required tables
+        const tables = testDb.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('songs', 'users')").all();
+        if (tables.length < 2) {
+            testDb.close();
+            fs_1.default.unlinkSync(uploadedPath);
+            return res.redirect('/admin?db_error=El+archivo+no+es+una+base+de+datos+válida+(debe+contener+las+tablas+songs+y+users)');
+        }
+        testDb.close();
+        // Close current db connection
+        db_1.default.close();
+        // Replace database file
+        fs_1.default.copyFileSync(uploadedPath, dbPath);
+        fs_1.default.unlinkSync(uploadedPath);
+        // Reload database module
+        delete require.cache[require.resolve('./db')];
+        require('./db');
+        res.redirect('/admin?db_success=Base+de+datos+importada+correctamente.+Reinicia+el+servidor+para+que+los+cambios+surtan+efecto+completo.');
+    }
+    catch (err) {
+        // Clean up temp file
+        try {
+            fs_1.default.unlinkSync(uploadedPath);
+        }
+        catch { }
+        // Re-open db if it was closed
+        try {
+            delete require.cache[require.resolve('./db')];
+            require('./db');
+        }
+        catch { }
+        res.redirect('/admin?db_error=Error+al+importar:+' + encodeURIComponent(err.message));
+    }
+});
+app.listen(PORT, () => {
+    console.log(`Setlists Manager running at http://localhost:${PORT}`);
+    // Migration: assign slugs to existing songs that don't have one
+    const songsWithoutSlug = db_1.default.prepare('SELECT * FROM songs WHERE slug IS NULL OR slug = \'\'').all();
+    for (const song of songsWithoutSlug) {
+        const slug = generateUniqueSlug(song.title);
+        db_1.default.prepare('UPDATE songs SET slug = ? WHERE id = ?').run(slug, song.id);
+    }
+    if (songsWithoutSlug.length > 0) {
+        console.log(`✅ Slugs generados para ${songsWithoutSlug.length} canción(es) existente(s).`);
+    }
+    const userCount = db_1.default.prepare('SELECT COUNT(*) as count FROM users').get().count;
+    if (userCount === 0) {
+        console.log(`⚠️  No hay usuarios configurados. Visita http://localhost:${PORT}/setup para crear el administrador.`);
+    }
+});
+//# sourceMappingURL=app.js.map

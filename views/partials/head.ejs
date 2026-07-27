@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LevelCross Setlists Manager</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header>
+    <nav>
+      <a href="/" class="logo">🎵 Setlists</a>
+      <div class="nav-links">
+        <% if (typeof isAuthenticated !== 'undefined' && isAuthenticated) { %>
+          <a href="/admin" class="nav-link">Admin</a>
+          <span class="nav-user"><%= username %></span>
+          <a href="/logout" class="btn btn-secondary btn-sm">Salir</a>
+        <% } %>
+      </div>
+    </nav>
+  </header>
+  <main>

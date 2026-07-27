@@ -1,0 +1,38 @@
+<%- include('partials/head') %>
+
+<div class="viewer">
+  <div class="viewer__header">
+    <div class="viewer__info">
+      <h1><%= song.title %></h1>
+      <% if (song.artist) { %>
+        <p class="viewer__artist"><%= song.artist %></p>
+      <% } %>
+    </div>
+    <div class="viewer__actions">
+      <% if (song.audio_url) { %>
+        <a href="<%= song.audio_url %>" target="_blank" rel="noopener noreferrer" class="btn btn-primary">
+          🔊 Escuchar
+        </a>
+      <% } %>
+      <% if (typeof isAuthenticated !== 'undefined' && isAuthenticated) { %>
+        <a href="/admin/songs/<%= song.slug %>/edit" class="btn btn-secondary">✏️ Editar</a>
+      <% } %>
+      <a href="/" class="btn btn-secondary">← Volver</a>
+    </div>
+  </div>
+
+  <% if (song.lyrics) { %>
+    <div class="lyrics-viewer" id="lyricsViewer">
+      <%- renderLyrics(song.lyrics) %>
+    </div>
+  <% } else { %>
+    <div class="empty-state">
+      <p>Esta canción no tiene letra cargada</p>
+      <% if (typeof isAuthenticated !== 'undefined' && isAuthenticated) { %>
+        <a href="/admin/songs/<%= song.slug %>/edit" class="btn btn-primary">📝 Agregar letra</a>
+      <% } %>
+    </div>
+  <% } %>
+</div>
+
+<%- include('partials/foot') %>

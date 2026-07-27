@@ -1,0 +1,37 @@
+<%- include('partials/head') %>
+
+<div class="form-container">
+  <h1><%= song ? '✏️ Editar canción' : '➕ Nueva canción' %></h1>
+  <form action="<%= song ? '/admin/songs/' + song.slug : '/admin/songs' %>" method="POST" class="song-form">
+    <div class="form-group">
+      <label for="title">Título *</label>
+      <input type="text" id="title" name="title" required value="<%= song ? song.title : '' %>" placeholder="Nombre de la canción">
+    </div>
+
+    <div class="form-group">
+      <label for="artist">Artista / Banda</label>
+      <input type="text" id="artist" name="artist" value="<%= song ? song.artist : '' %>" placeholder="Opcional">
+    </div>
+
+    <div class="form-group">
+      <label for="audio_url">Enlace para escuchar (YouTube, Spotify, etc.)</label>
+      <input type="url" id="audio_url" name="audio_url" value="<%= song ? song.audio_url : '' %>" placeholder="https://...">
+    </div>
+
+    <div class="form-group">
+      <label for="lyrics">Letra (formato ChartPro)</label>
+      <p class="help-text">
+        Escribe acordes entre corchetes sobre la letra. Ejemplo:<br>
+        <code>[Am]Let it [G]be, let it [C]be</code>
+      </p>
+      <textarea id="lyrics" name="lyrics" rows="15" placeholder="[Am] Let it [G] be, let it [C] be..."><%= song ? song.lyrics : '' %></textarea>
+    </div>
+
+    <div class="form-actions">
+      <a href="/admin" class="btn btn-secondary">Cancelar</a>
+      <button type="submit" class="btn btn-primary"><%= song ? '💾 Guardar' : '✅ Crear' %></button>
+    </div>
+  </form>
+</div>
+
+<%- include('partials/foot') %>

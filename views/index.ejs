@@ -1,0 +1,45 @@
+<%- include('partials/head') %>
+
+<div class="page-header">
+  <h1>Setlist</h1>
+  <p class="page-subtitle">Canciones disponibles</p>
+</div>
+
+<div class="search-bar">
+  <form action="/" method="GET">
+    <input type="text" name="search" placeholder="Buscar canción..." value="<%= search %>">
+    <button type="submit" class="btn">🔍 Buscar</button>
+  </form>
+</div>
+
+<% if (songs.length === 0) { %>
+  <div class="empty-state">
+    <p>No hay canciones aún</p>
+    <% if (typeof isAuthenticated !== 'undefined' && isAuthenticated) { %>
+      <a href="/admin/songs/new" class="btn btn-primary">+ Crear primera canción</a>
+    <% } %>
+  </div>
+<% } else { %>
+  <div class="song-list">
+    <% songs.forEach(song => { %>
+      <a href="/songs/<%= song.slug %>" class="song-card">
+        <div class="song-card__info">
+          <h3><%= song.title %></h3>
+          <% if (song.artist) { %>
+            <p class="song-card__artist"><%= song.artist %></p>
+          <% } %>
+        </div>
+        <div class="song-card__meta">
+          <% if (song.lyrics) { %>
+            <span class="badge">🎤 Letra</span>
+          <% } %>
+          <% if (song.audio_url) { %>
+            <span class="badge badge-audio">🔊 Audio</span>
+          <% } %>
+        </div>
+      </a>
+    <% }) %>
+  </div>
+<% } %>
+
+<%- include('partials/foot') %>
