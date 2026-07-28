@@ -159,9 +159,9 @@ app.locals.renderLyrics = renderLyrics;
 // ── Auth middleware ──
 
 function requireAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
-  if (!req.session || !req.session.userId) {
-    return res.redirect(`${BASE_URL}/login`);
-  }
+  // if (!req.session || !req.session.userId) {
+  //   return res.redirect(`${BASE_URL}/login`);
+  // }
   next();
 }
 
