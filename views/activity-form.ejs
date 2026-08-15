@@ -121,18 +121,27 @@
           </ul>
         </div>
 
-        <div class="setlist-library-wrap">
+        <div class="setlist-library-wrap" data-list-filter>
           <div class="setlist-ordered-head">
             <strong>Disponibles</strong>
             <span class="help-text" style="margin:0">Clic para añadir</span>
           </div>
-          <div class="setlist-library" data-people-library>
+          <div class="search-bar search-bar--compact search-bar--full" style="margin-bottom:10px">
+            <input
+              type="search"
+              data-list-filter-input
+              placeholder="Escribe al menos 3 caracteres para buscar..."
+              autocomplete="off"
+            >
+          </div>
+          <div class="setlist-library" data-people-library data-list-filter-list>
             <% people.forEach((person) => {
               if (selectedPeopleIds.includes(person.id)) return;
               const availableRoles = person.roles || [];
               const initial = (person.name || 'P').charAt(0).toUpperCase();
               const photo = person.photo_url ? photoSrc(person.photo_url) : '';
               const rolesLabel = availableRoles.length ? availableRoles.join(' · ') : 'Sin roles';
+              const filterText = [person.name].concat(availableRoles).filter(Boolean).join(' ');
             %>
               <button
                 type="button"
@@ -143,6 +152,8 @@
                 data-person-photo="<%= photo %>"
                 data-person-initial="<%= initial %>"
                 data-person-roles="<%= JSON.stringify(availableRoles) %>"
+                data-list-filter-item
+                data-filter-text="<%= filterText %>"
               >
                 <% if (photo) { %>
                   <img src="<%= photo %>" alt="" class="setlist-pool-item__avatar" referrerpolicy="no-referrer">
@@ -157,13 +168,16 @@
               </button>
             <% }) %>
           </div>
+          <div class="empty-state compact" data-list-filter-empty hidden style="margin-top:8px">
+            <p>No hay personas que coincidan con la búsqueda.</p>
+          </div>
         </div>
       </div>
 
       <template data-people-item-template>
         <li class="setlist-item setlist-item--person" data-person-item>
-          <span class="setlist-item__avatar setlist-item__avatar--fallback" data-avatar-fallback aria-hidden="true"></span>
-          <img src="" alt="" class="setlist-item__avatar" data-avatar-img hidden referrerpolicy="no-referrer">
+          <span class="setlist-item__avatar setlist-item__avatar--fallback is-hidden" data-avatar-fallback aria-hidden="true"></span>
+          <img src="" alt="" class="setlist-item__avatar is-hidden" data-avatar-img referrerpolicy="no-referrer">
           <div class="setlist-item__info">
             <strong data-name></strong>
             <div class="chip-selector setlist-item__roles" data-person-roles hidden></div>
@@ -175,9 +189,9 @@
       </template>
 
       <template data-people-pool-template>
-        <button type="button" class="setlist-pool-item setlist-pool-item--person" data-person-add>
-          <span class="setlist-pool-item__avatar setlist-pool-item__avatar--fallback" data-avatar-fallback aria-hidden="true"></span>
-          <img src="" alt="" class="setlist-pool-item__avatar" data-avatar-img hidden referrerpolicy="no-referrer">
+        <button type="button" class="setlist-pool-item setlist-pool-item--person" data-person-add data-list-filter-item>
+          <span class="setlist-pool-item__avatar setlist-pool-item__avatar--fallback is-hidden" data-avatar-fallback aria-hidden="true"></span>
+          <img src="" alt="" class="setlist-pool-item__avatar is-hidden" data-avatar-img referrerpolicy="no-referrer">
           <span class="setlist-pool-item__body">
             <span class="setlist-pool-item__title" data-name></span>
             <small class="setlist-pool-item__artist" data-roles-label></small>
@@ -236,14 +250,23 @@
           </ol>
         </div>
 
-        <div class="setlist-library-wrap">
+        <div class="setlist-library-wrap" data-list-filter>
           <div class="setlist-ordered-head">
             <strong>Biblioteca</strong>
             <span class="help-text" style="margin:0">Clic para añadir</span>
           </div>
-          <div class="setlist-library" data-setlist-library>
+          <div class="search-bar search-bar--compact search-bar--full" style="margin-bottom:10px">
+            <input
+              type="search"
+              data-list-filter-input
+              placeholder="Escribe al menos 3 caracteres para buscar..."
+              autocomplete="off"
+            >
+          </div>
+          <div class="setlist-library" data-setlist-library data-list-filter-list>
             <% songs.forEach((song) => {
               if (selectedIds.includes(song.id)) return;
+              const filterText = [song.title, song.artist].filter(Boolean).join(' ');
             %>
               <button
                 type="button"
@@ -252,6 +275,8 @@
                 data-song-id="<%= song.id %>"
                 data-song-title="<%= song.title %>"
                 data-song-artist="<%= song.artist || '' %>"
+                data-list-filter-item
+                data-filter-text="<%= filterText %>"
               >
                 <span class="setlist-pool-item__title"><%= song.title %></span>
                 <% if (song.artist) { %>
@@ -260,6 +285,9 @@
                 <span class="setlist-pool-item__add" aria-hidden="true">+</span>
               </button>
             <% }) %>
+          </div>
+          <div class="empty-state compact" data-list-filter-empty hidden style="margin-top:8px">
+            <p>No hay canciones que coincidan con la búsqueda.</p>
           </div>
         </div>
       </div>
@@ -279,7 +307,7 @@
       </template>
 
       <template data-setlist-pool-template>
-        <button type="button" class="setlist-pool-item" data-song-add>
+        <button type="button" class="setlist-pool-item" data-song-add data-list-filter-item>
           <span class="setlist-pool-item__title" data-title></span>
           <small class="setlist-pool-item__artist" data-artist hidden></small>
           <span class="setlist-pool-item__add" aria-hidden="true">+</span>
@@ -304,6 +332,7 @@
   </section>
 <% } %>
 
+<script src="<%= base %>/list-filter.js"></script>
 <script>
   (function initSetlistBuilder() {
     const builder = document.querySelector('[data-setlist-builder]');
@@ -372,6 +401,7 @@
       node.dataset.songId = String(songId);
       node.dataset.songTitle = title;
       node.dataset.songArtist = artist || '';
+      node.setAttribute('data-filter-text', [title, artist].filter(Boolean).join(' '));
       node.querySelector('[data-title]').textContent = title;
       const artistEl = node.querySelector('[data-artist]');
       if (artist) {
@@ -384,6 +414,11 @@
       return node;
     }
 
+    function refreshLibraryFilter() {
+      const filterRoot = library.closest('[data-list-filter]');
+      if (filterRoot) filterRoot.dispatchEvent(new Event('listfilter:refresh'));
+    }
+
     function addSong(songId, title, artist, poolButton) {
       if (orderedList.querySelector('[data-song-id="' + songId + '"]')) return;
       const item = createOrderedItem(songId, title, artist);
@@ -391,6 +426,7 @@
       if (poolButton) poolButton.remove();
       bindItem(item);
       renumber();
+      refreshLibraryFilter();
     }
 
     function removeSong(item) {
@@ -404,6 +440,7 @@
       item.remove();
       library.appendChild(createPoolItem(songId, titleText, artistText));
       renumber();
+      refreshLibraryFilter();
     }
 
     function bindItem(item) {
@@ -507,14 +544,20 @@
       const fallback = root.querySelector('[data-avatar-fallback]');
       if (photo && img) {
         img.src = photo;
+        img.classList.remove('is-hidden');
         img.hidden = false;
-        if (fallback) fallback.hidden = true;
+        if (fallback) {
+          fallback.classList.add('is-hidden');
+          fallback.hidden = true;
+        }
       } else {
         if (img) {
+          img.classList.add('is-hidden');
           img.hidden = true;
           img.removeAttribute('src');
         }
         if (fallback) {
+          fallback.classList.remove('is-hidden');
           fallback.hidden = false;
           fallback.textContent = initial || 'P';
         }
@@ -563,12 +606,18 @@
       node.dataset.personPhoto = photo || '';
       node.dataset.personInitial = initial || 'P';
       node.dataset.personRoles = JSON.stringify(roles || []);
+      node.setAttribute('data-filter-text', [name].concat(roles || []).filter(Boolean).join(' '));
 
       setAvatar(node, photo, initial || 'P');
       node.querySelector('[data-name]').textContent = name;
       const rolesLabel = node.querySelector('[data-roles-label]');
       rolesLabel.textContent = roles && roles.length ? roles.join(' · ') : 'Sin roles';
       return node;
+    }
+
+    function refreshPeopleFilter() {
+      const filterRoot = library.closest('[data-list-filter]');
+      if (filterRoot) filterRoot.dispatchEvent(new Event('listfilter:refresh'));
     }
 
     function readPersonData(el) {
@@ -588,6 +637,7 @@
       if (poolButton) poolButton.remove();
       bindItem(item);
       ensureEmptyState();
+      refreshPeopleFilter();
     }
 
     function removePerson(item) {
@@ -595,6 +645,7 @@
       item.remove();
       library.appendChild(createPoolItem(data.id, data.name, data.photo, data.initial, data.roles));
       ensureEmptyState();
+      refreshPeopleFilter();
     }
 
     function bindItem(item) {

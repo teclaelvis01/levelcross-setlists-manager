@@ -3,6 +3,8 @@
 <%
   const base = typeof baseUrl !== 'undefined' ? baseUrl : '';
   const returnPath = base + '/actividades/' + activity.slug;
+  const peopleCount = people ? people.length : 0;
+  const songsCount = songs ? songs.length : 0;
 %>
 
 <%- include('partials/public-nav', { publicSection: 'activities' }) %>
@@ -28,20 +30,35 @@
     <p class="activity-detail__note"><%= activity.detail %></p>
   <% } %>
 
-  <section class="activity-people">
+  <section class="activity-people" data-list-filter data-list-filter-total="<%= peopleCount %>">
     <div class="activity-setlist__header">
       <h2>Personas</h2>
-      <span class="activity-setlist__count"><%= people ? people.length : 0 %></span>
+      <span class="activity-setlist__count" data-list-filter-count><%= peopleCount %></span>
     </div>
 
-    <% if (people && people.length > 0) { %>
-      <div class="activity-people-chips">
+    <% if (peopleCount > 0) { %>
+      <div class="search-bar search-bar--compact search-bar--full">
+        <input
+          type="search"
+          data-list-filter-input
+          placeholder="Escribe al menos 3 caracteres para buscar..."
+          autocomplete="off"
+        >
+      </div>
+
+      <div class="activity-people-chips" data-list-filter-list>
         <% people.forEach(person => {
           const roles = person.activityRoles || person.roles || [];
           const initial = (person.name || 'P').charAt(0).toUpperCase();
           const roleText = roles.length ? roles.join(' · ') : 'Sin rol';
+          const filterText = [person.name].concat(roles).filter(Boolean).join(' ');
         %>
-          <div class="activity-person-chip" title="<%= person.name %> — <%= roleText %>">
+          <div
+            class="activity-person-chip"
+            title="<%= person.name %> — <%= roleText %>"
+            data-list-filter-item
+            data-filter-text="<%= filterText %>"
+          >
             <% if (person.photo_url) { %>
               <img
                 src="<%= photoSrc(person.photo_url) %>"
@@ -59,6 +76,10 @@
           </div>
         <% }) %>
       </div>
+
+      <div class="empty-state compact" data-list-filter-empty hidden>
+        <p>No hay personas que coincidan con la búsqueda.</p>
+      </div>
     <% } else { %>
       <div class="empty-state compact">
         <p>Aún no hay personas asignadas a esta actividad.</p>
@@ -66,16 +87,27 @@
     <% } %>
   </section>
 
-  <section class="activity-setlist">
+  <section class="activity-setlist" data-list-filter data-list-filter-total="<%= songsCount %>">
     <div class="activity-setlist__header">
       <h2>Canciones</h2>
-      <span class="activity-setlist__count"><%= songs.length %></span>
+      <span class="activity-setlist__count" data-list-filter-count><%= songsCount %></span>
     </div>
 
-    <% if (songs && songs.length > 0) { %>
-      <ol class="activity-setlist__list">
-        <% songs.forEach((song, index) => { %>
-          <li>
+    <% if (songsCount > 0) { %>
+      <div class="search-bar search-bar--compact search-bar--full">
+        <input
+          type="search"
+          data-list-filter-input
+          placeholder="Escribe al menos 3 caracteres para buscar..."
+          autocomplete="off"
+        >
+      </div>
+
+      <ol class="activity-setlist__list" data-list-filter-list>
+        <% songs.forEach((song, index) => {
+          const filterText = [song.title, song.artist].filter(Boolean).join(' ');
+        %>
+          <li data-list-filter-item data-filter-text="<%= filterText %>">
             <a
               class="activity-setlist__item"
               href="<%= base %>/songs/<%= song.slug %>?from=<%= encodeURIComponent(returnPath) %>"
@@ -92,6 +124,10 @@
           </li>
         <% }) %>
       </ol>
+
+      <div class="empty-state compact" data-list-filter-empty hidden>
+        <p>No hay canciones que coincidan con la búsqueda.</p>
+      </div>
     <% } else { %>
       <div class="empty-state compact">
         <p>Aún no hay canciones asignadas a esta actividad.</p>
@@ -100,4 +136,5 @@
   </section>
 </div>
 
+<script src="<%= base %>/list-filter.js"></script>
 <%- include('partials/foot') %>

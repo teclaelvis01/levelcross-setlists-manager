@@ -1,5 +1,5 @@
 (function () {
-  var DEBOUNCE_MS = 500;
+  var DEBOUNCE_MS = 300;
   var MIN_CHARS = 3;
 
   function effectiveQuery(value) {

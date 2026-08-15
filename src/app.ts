@@ -13,6 +13,7 @@ let db = dbDefault;
 const app = express();
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const BASE_URL = process.env.BASE_URL || '';
+const isDev = process.env.NODE_ENV !== 'production';
 const SALT_ROUNDS = 10;
 const DEFAULT_SONGS_PER_PAGE = 12;
 const PAGE_SIZE_OPTIONS = [5, 10, 50];
@@ -82,7 +83,18 @@ app.use((req, _res, next) => {
 });
 
 // Static files (served at / regardless of BASE_URL)
-app.use(express.static(path.join(__dirname, '..', 'public')));
+const publicDir = path.join(__dirname, '..', 'public');
+app.use(
+  express.static(publicDir, isDev
+    ? {
+        etag: false,
+        lastModified: false,
+        setHeaders(res) {
+          res.setHeader('Cache-Control', 'no-store, must-revalidate');
+        },
+      }
+    : undefined)
+);
 app.use('/uploads', express.static(uploadsRoot));
 
 // Trust the reverse proxy (Coolify/Caddy) so that req.protocol, req.hostname etc. are correct
@@ -111,6 +123,7 @@ app.use(session({
 // View engine
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, '..', 'views'));
+app.set('view cache', !isDev);
 
 // ── Helpers ──
 
@@ -266,26 +279,56 @@ function collectActivityRolesByPerson(input: unknown): Record<number, string[]> 
 }
 
 function saveActivityPeople(activityId: number, personIds: number[], rolesByPerson: Record<number, string[]>) {
-  db.prepare('DELETE FROM activity_person_roles WHERE activity_id = ?').run(activityId);
-  db.prepare('DELETE FROM activity_people WHERE activity_id = ?').run(activityId);
+  const save = db.transaction(() => {
+    db.prepare('DELETE FROM activity_person_roles WHERE activity_id = ?').run(activityId);
+    db.prepare('DELETE FROM activity_people WHERE activity_id = ?').run(activityId);
 
-  const insertPerson = db.prepare('INSERT INTO activity_people (activity_id, person_id) VALUES (?, ?)');
-  const insertRole = db.prepare('INSERT INTO activity_person_roles (activity_id, person_id, role) VALUES (?, ?, ?)');
+    const insertPerson = db.prepare('INSERT INTO activity_people (activity_id, person_id) VALUES (?, ?)');
+    const insertRole = db.prepare('INSERT INTO activity_person_roles (activity_id, person_id, role) VALUES (?, ?, ?)');
+    const personExists = db.prepare('SELECT id FROM people WHERE id = ?');
 
-  for (const personId of personIds) {
-    const availableRoles = getPersonRoles(personId);
-    insertPerson.run(activityId, personId);
+    for (const personId of personIds) {
+      if (!personExists.get(personId)) continue;
 
-    if (availableRoles.length === 0) continue;
+      const availableRoles = getPersonRoles(personId);
+      insertPerson.run(activityId, personId);
 
-    const selectedRoles = (rolesByPerson[personId] || [])
-      .filter((role) => availableRoles.includes(role));
-    const rolesToSave = selectedRoles.length > 0 ? selectedRoles : availableRoles;
+      if (availableRoles.length === 0) continue;
 
-    for (const role of rolesToSave) {
-      insertRole.run(activityId, personId, role);
+      const selectedRoles = (rolesByPerson[personId] || [])
+        .filter((role) => availableRoles.includes(role));
+      const rolesToSave = selectedRoles.length > 0 ? selectedRoles : availableRoles;
+
+      for (const role of rolesToSave) {
+        insertRole.run(activityId, personId, role);
+      }
     }
-  }
+  });
+
+  save();
+}
+
+function saveActivitySongs(activityId: number, req: express.Request) {
+  const selectedSongs = Array.isArray(req.body.song_ids) ? req.body.song_ids : (req.body.song_ids ? [req.body.song_ids] : []);
+  const orderLookup = req.body.song_order && typeof req.body.song_order === 'object' ? req.body.song_order : {};
+  const pairs: Array<{ songId: number; order: number }> = selectedSongs.map((songId: string | number, index: number) => {
+    const numericId = Number(songId);
+    const order = Number(orderLookup[String(songId)] ?? index + 1);
+    return { songId: numericId, order: Number.isFinite(order) && order > 0 ? order : index + 1 };
+  }).filter((item: { songId: number; order: number }) => !Number.isNaN(item.songId));
+
+  const save = db.transaction(() => {
+    db.prepare('DELETE FROM activity_songs WHERE activity_id = ?').run(activityId);
+    const insertSong = db.prepare('INSERT INTO activity_songs (activity_id, song_id, position) VALUES (?, ?, ?)');
+    const songExists = db.prepare('SELECT id FROM songs WHERE id = ?');
+
+    for (const item of pairs.sort((a, b) => a.order - b.order)) {
+      if (!songExists.get(item.songId)) continue;
+      insertSong.run(activityId, item.songId, item.order);
+    }
+  });
+
+  save();
 }
 
 function getActivityPeoplePreview(activityId: number) {
@@ -1205,28 +1248,22 @@ app.post('/admin/actividades', requireAuth, (req, res) => {
     });
   }
 
-  const slug = generateUniqueActivitySlug(name);
-  const insert = db.prepare('INSERT INTO activities (name, slug, activity_date, activity_time, detail) VALUES (?, ?, ?, ?, ?)')
-    .run(name, slug, activityDate, activityTime, detail);
-  const activityId = Number(insert.lastInsertRowid);
+  try {
+    const slug = generateUniqueActivitySlug(name);
+    const insert = db.prepare('INSERT INTO activities (name, slug, activity_date, activity_time, detail) VALUES (?, ?, ?, ?, ?)')
+      .run(name, slug, activityDate, activityTime, detail);
+    const activityId = Number(insert.lastInsertRowid);
 
-  const selectedPeople = collectSelectedPeopleIds(req.body.person_ids);
-  const rolesByPerson = collectActivityRolesByPerson(req.body.person_roles);
-  saveActivityPeople(activityId, selectedPeople, rolesByPerson);
+    const selectedPeople = collectSelectedPeopleIds(req.body.person_ids);
+    const rolesByPerson = collectActivityRolesByPerson(req.body.person_roles);
+    saveActivityPeople(activityId, selectedPeople, rolesByPerson);
+    saveActivitySongs(activityId, req);
 
-  const selectedSongs = Array.isArray(req.body.song_ids) ? req.body.song_ids : (req.body.song_ids ? [req.body.song_ids] : []);
-  const orderLookup = req.body.song_order && typeof req.body.song_order === 'object' ? req.body.song_order : {};
-  const pairs: Array<{ songId: number; order: number }> = selectedSongs.map((songId: string | number, index: number) => {
-    const numericId = Number(songId);
-    const order = Number(orderLookup[String(songId)] ?? index + 1);
-    return { songId: numericId, order: Number.isFinite(order) && order > 0 ? order : index + 1 };
-  }).filter((item: { songId: number; order: number }) => !Number.isNaN(item.songId));
-
-  for (const item of pairs.sort((a: { songId: number; order: number }, b: { songId: number; order: number }) => a.order - b.order)) {
-    db.prepare('INSERT INTO activity_songs (activity_id, song_id, position) VALUES (?, ?, ?)').run(activityId, item.songId, item.order);
+    return flashRedirect(req, res, '/admin/actividades', 'success', 'Actividad creada correctamente');
+  } catch (error) {
+    console.error(error);
+    return flashRedirect(req, res, '/admin/actividades/nueva', 'error', 'No se pudo crear la actividad. Revisa los datos e inténtalo de nuevo.');
   }
-
-  return flashRedirect(req, res, '/admin/actividades', 'success', 'Actividad creada correctamente');
 });
 
 app.post('/admin/actividades/:id', requireAuth, (req, res) => {
@@ -1241,7 +1278,7 @@ app.post('/admin/actividades/:id', requireAuth, (req, res) => {
   const detail = (req.body.detail || '').trim();
   if (!name || !activityDate) {
     const songs = db.prepare('SELECT * FROM songs ORDER BY title ASC').all() as Song[];
-    const people = listAssignablePeopleForActivity();
+    const people = listAssignablePeopleForActivity(buildAssignedPeopleFromBody(req));
     showFormError(res, 'El nombre y la fecha son requeridos');
     return res.status(400).render('activity-form', {
       activity: { ...existing, name, activity_date: activityDate, activity_time: activityTime, detail },
@@ -1255,32 +1292,31 @@ app.post('/admin/actividades/:id', requireAuth, (req, res) => {
     });
   }
 
-  let slug = existing.slug;
-  if (name !== existing.name) {
-    slug = generateUniqueActivitySlug(name, existing.id);
+  try {
+    let slug = existing.slug;
+    if (name !== existing.name) {
+      slug = generateUniqueActivitySlug(name, existing.id);
+    }
+
+    db.prepare('UPDATE activities SET name = ?, slug = ?, activity_date = ?, activity_time = ?, detail = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+      .run(name, slug, activityDate, activityTime, detail, existing.id);
+
+    const selectedPeople = collectSelectedPeopleIds(req.body.person_ids);
+    const rolesByPerson = collectActivityRolesByPerson(req.body.person_roles);
+    saveActivityPeople(existing.id, selectedPeople, rolesByPerson);
+    saveActivitySongs(existing.id, req);
+
+    return flashRedirect(req, res, '/admin/actividades', 'success', 'Actividad actualizada correctamente');
+  } catch (error) {
+    console.error(error);
+    return flashRedirect(
+      req,
+      res,
+      `/admin/actividades/${existing.id}/editar`,
+      'error',
+      'No se pudo guardar la actividad. Revisa los datos e inténtalo de nuevo.'
+    );
   }
-
-  db.prepare('UPDATE activities SET name = ?, slug = ?, activity_date = ?, activity_time = ?, detail = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
-    .run(name, slug, activityDate, activityTime, detail, existing.id);
-
-  db.prepare('DELETE FROM activity_songs WHERE activity_id = ?').run(existing.id);
-
-  const selectedPeople = collectSelectedPeopleIds(req.body.person_ids);
-  const rolesByPerson = collectActivityRolesByPerson(req.body.person_roles);
-  saveActivityPeople(existing.id, selectedPeople, rolesByPerson);
-
-  const selectedSongs = Array.isArray(req.body.song_ids) ? req.body.song_ids : (req.body.song_ids ? [req.body.song_ids] : []);
-  const orderLookup = req.body.song_order && typeof req.body.song_order === 'object' ? req.body.song_order : {};
-  const pairs: Array<{ songId: number; order: number }> = selectedSongs.map((songId: string | number, index: number) => {
-    const numericId = Number(songId);
-    const order = Number(orderLookup[String(songId)] ?? index + 1);
-    return { songId: numericId, order: Number.isFinite(order) && order > 0 ? order : index + 1 };
-  }).filter((item: { songId: number; order: number }) => !Number.isNaN(item.songId));
-  for (const item of pairs.sort((a: { songId: number; order: number }, b: { songId: number; order: number }) => a.order - b.order)) {
-    db.prepare('INSERT INTO activity_songs (activity_id, song_id, position) VALUES (?, ?, ?)').run(existing.id, item.songId, item.order);
-  }
-
-  return flashRedirect(req, res, '/admin/actividades', 'success', 'Actividad actualizada correctamente');
 });
 
 app.post('/admin/actividades/:id/delete', requireAuth, (req, res) => {
@@ -1539,6 +1575,9 @@ app.post('/admin/ajustes/multimedia/import', requireAuth, backupUpload.single('m
 app.listen(PORT, '0.0.0.0', () => {
   const urlStr = BASE_URL ? `http://localhost:${PORT}${BASE_URL}` : `http://localhost:${PORT}`;
   console.log(`Setlists Manager running at ${urlStr}`);
+  if (isDev) {
+    console.log('Dev mode: hot reload on src/ changes; views/public reload without cache');
+  }
 
   const songsWithoutSlug = db.prepare('SELECT * FROM songs WHERE slug IS NULL OR slug = \'\'').all() as Song[];
   for (const song of songsWithoutSlug) {
