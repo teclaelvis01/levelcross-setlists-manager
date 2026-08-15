@@ -7,11 +7,15 @@ const dbPath = path.join(__dirname, '..', 'data', 'setlists.db');
 
 const dataDir = path.join(__dirname, '..', 'data');
 const uploadsDir = path.join(__dirname, '..', 'data', 'uploads');
+const peopleUploadsDir = path.join(uploadsDir, 'people');
 if (!fs.existsSync(dataDir)) {
   fs.mkdirSync(dataDir, { recursive: true });
 }
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
+}
+if (!fs.existsSync(peopleUploadsDir)) {
+  fs.mkdirSync(peopleUploadsDir, { recursive: true });
 }
 
 export function openDatabase() {

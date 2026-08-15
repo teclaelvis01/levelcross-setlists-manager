@@ -28,8 +28,40 @@ const MUSICAL_ROLES = [
 // Make baseUrl available to all views
 app.locals.baseUrl = BASE_URL;
 
-// Multer config for file uploads (import DB)
-const upload = multer({ dest: path.join(__dirname, '..', 'data', 'uploads') });
+const dataRoot = path.join(__dirname, '..', 'data');
+const uploadsRoot = path.join(dataRoot, 'uploads');
+const peopleUploadsDir = path.join(uploadsRoot, 'people');
+const MAX_PERSON_PHOTO_BYTES = 1 * 1024 * 1024; // 1 MB
+const ALLOWED_PERSON_PHOTO_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
+
+if (!fs.existsSync(peopleUploadsDir)) {
+  fs.mkdirSync(peopleUploadsDir, { recursive: true });
+}
+
+// Multer: DB import
+const upload = multer({ dest: uploadsRoot });
+
+// Multer: person photos
+const personPhotoUpload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, peopleUploadsDir),
+    filename: (_req, file, cb) => {
+      const ext = path.extname(file.originalname).toLowerCase();
+      const safeExt = ['.jpg', '.jpeg', '.png', '.webp', '.gif'].includes(ext)
+        ? (ext === '.jpeg' ? '.jpg' : ext)
+        : '.jpg';
+      cb(null, `${Date.now()}-${Math.random().toString(36).slice(2, 10)}${safeExt}`);
+    },
+  }),
+  limits: { fileSize: MAX_PERSON_PHOTO_BYTES },
+  fileFilter: (_req, file, cb) => {
+    if (!ALLOWED_PERSON_PHOTO_TYPES.has(file.mimetype)) {
+      cb(new Error('Solo se permiten imágenes JPG, PNG, WebP o GIF'));
+      return;
+    }
+    cb(null, true);
+  },
+});
 
 // Middleware
 app.use(express.urlencoded({ extended: true }));
@@ -50,6 +82,7 @@ app.use((req, _res, next) => {
 
 // Static files (served at / regardless of BASE_URL)
 app.use(express.static(path.join(__dirname, '..', 'public')));
+app.use('/uploads', express.static(uploadsRoot));
 
 // Trust the reverse proxy (Coolify/Caddy) so that req.protocol, req.hostname etc. are correct
 app.set('trust proxy', true);
@@ -393,9 +426,49 @@ app.use((req, _res, next) => {
 
 // ── URL helper for redirects ──
 
-function url(path: string): string {
-  return BASE_URL + path;
+function url(pathName: string): string {
+  return BASE_URL + pathName;
 }
+
+function isLocalPersonPhoto(photoUrl: string): boolean {
+  return typeof photoUrl === 'string' && photoUrl.startsWith('/uploads/people/');
+}
+
+function photoSrc(photoUrl: string | null | undefined): string {
+  if (!photoUrl) return '';
+  if (photoUrl.startsWith('http://') || photoUrl.startsWith('https://')) return photoUrl;
+  return url(photoUrl);
+}
+
+function deleteLocalPersonPhoto(photoUrl: string | null | undefined) {
+  if (!photoUrl || !isLocalPersonPhoto(photoUrl)) return;
+  const filename = path.basename(photoUrl);
+  if (!filename || filename === '.' || filename === '..') return;
+  const fullPath = path.join(peopleUploadsDir, filename);
+  try {
+    if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
+  } catch {
+    // ignore cleanup errors
+  }
+}
+
+function handlePersonPhotoUpload(req: express.Request, res: express.Response, next: express.NextFunction) {
+  personPhotoUpload.single('photo')(req, res, (err: unknown) => {
+    if (err instanceof multer.MulterError) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).send('La imagen supera el límite de 1 MB');
+      }
+      return res.status(400).send('Error al subir la imagen');
+    }
+    if (err) {
+      const message = err instanceof Error ? err.message : 'Error al subir la imagen';
+      return res.status(400).send(message);
+    }
+    next();
+  });
+}
+
+app.locals.photoSrc = photoSrc;
 
 // ── Public Routes ──
 
@@ -636,14 +709,15 @@ app.get('/admin/personas/nueva', requireAuth, (_req, res) => {
   res.render('admin-person-form', { person: null, roles: MUSICAL_ROLES });
 });
 
-app.post('/admin/personas', requireAuth, (req, res) => {
+app.post('/admin/personas', requireAuth, handlePersonPhotoUpload, (req, res) => {
   const name = (req.body.name || '').trim();
-  const photoUrl = (req.body.photo_url || '').trim();
   const roles = collectSelectedRoles(req.body.roles);
   if (!name || roles.length === 0) {
+    if (req.file) deleteLocalPersonPhoto(`/uploads/people/${req.file.filename}`);
     return res.status(400).send('El nombre y al menos un rol son requeridos');
   }
 
+  const photoUrl = req.file ? `/uploads/people/${req.file.filename}` : '';
   const insert = db.prepare('INSERT INTO people (name, photo_url) VALUES (?, ?)').run(name, photoUrl);
   const personId = Number(insert.lastInsertRowid);
   for (const role of roles) {
@@ -663,16 +737,28 @@ app.get('/admin/personas/:id/editar', requireAuth, (req, res) => {
   });
 });
 
-app.post('/admin/personas/:id', requireAuth, (req, res) => {
+app.post('/admin/personas/:id', requireAuth, handlePersonPhotoUpload, (req, res) => {
   const person = db.prepare('SELECT * FROM people WHERE id = ? AND deleted_at IS NULL').get(req.params.id) as any | undefined;
   if (!person) {
+    if (req.file) deleteLocalPersonPhoto(`/uploads/people/${req.file.filename}`);
     return res.status(404).send('Persona no encontrada');
   }
   const name = (req.body.name || '').trim();
-  const photoUrl = (req.body.photo_url || '').trim();
   const roles = collectSelectedRoles(req.body.roles);
   if (!name || roles.length === 0) {
+    if (req.file) deleteLocalPersonPhoto(`/uploads/people/${req.file.filename}`);
     return res.status(400).send('El nombre y al menos un rol son requeridos');
+  }
+
+  let photoUrl = person.photo_url || '';
+  const removePhoto = req.body.remove_photo === '1' || req.body.remove_photo === 'on';
+
+  if (req.file) {
+    deleteLocalPersonPhoto(photoUrl);
+    photoUrl = `/uploads/people/${req.file.filename}`;
+  } else if (removePhoto) {
+    deleteLocalPersonPhoto(photoUrl);
+    photoUrl = '';
   }
 
   db.prepare('UPDATE people SET name = ?, photo_url = ? WHERE id = ?').run(name, photoUrl, person.id);

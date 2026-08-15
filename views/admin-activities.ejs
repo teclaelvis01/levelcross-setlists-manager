@@ -25,7 +25,7 @@
 <% } else { %>
   <div class="activity-list admin-list">
     <% safeActivities.forEach(activity => { %>
-      <div class="activity-card admin-entity-card">
+      <a href="<%= base %>/admin/actividades/<%= activity.id %>/editar" class="activity-card admin-entity-card activity-card--link">
         <div class="activity-card__body">
           <h3 class="admin-entity-card__title"><%= activity.name %></h3>
           <div class="activity-card__meta">
@@ -38,14 +38,7 @@
             <p class="activity-card__detail"><%= activity.detail.length > 120 ? activity.detail.slice(0, 120) + '...' : activity.detail %></p>
           <% } %>
         </div>
-        <div class="activity-card__actions">
-          <a href="<%= base %>/actividades/<%= activity.slug %>" class="btn btn-icon" title="Ver">👁️</a>
-          <a href="<%= base %>/admin/actividades/<%= activity.id %>/editar" class="btn btn-icon" title="Editar">✏️</a>
-          <form action="<%= base %>/admin/actividades/<%= activity.id %>/delete" method="POST" class="inline-form" onsubmit="return confirm('¿Eliminar esta actividad?')">
-            <button type="submit" class="btn btn-icon btn-danger" title="Eliminar">🗑️</button>
-          </form>
-        </div>
-      </div>
+      </a>
     <% }) %>
   </div>
 <% } %>

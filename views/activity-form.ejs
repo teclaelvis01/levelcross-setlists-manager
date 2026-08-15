@@ -1,32 +1,49 @@
+<%
+  const base = typeof baseUrl !== 'undefined' ? baseUrl : '';
+  const isEdit = !!activity;
+  const deleteConfirm = isEdit
+    ? '¿Eliminar la actividad «' + activity.name + '»? Se borrará de forma permanente y no se puede deshacer.'
+    : '';
+%>
+
 <%- include('partials/head') %>
 
 <div class="page-header">
   <div>
-    <h1><%= activity ? '✏️ Editar actividad' : '➕ Nueva actividad' %></h1>
+    <h1><%= isEdit ? 'Editar actividad' : 'Nueva actividad' %></h1>
     <p class="page-subtitle">Define la actividad, las canciones y las personas responsables</p>
   </div>
-  <a href="<%= (typeof baseUrl !== 'undefined' ? baseUrl : '') %>/admin/actividades" class="btn btn-secondary">← Volver</a>
+  <div class="header-actions">
+    <% if (isEdit && activity.slug) { %>
+      <a href="<%= base %>/actividades/<%= activity.slug %>" class="btn btn-secondary" target="_blank" rel="noopener noreferrer">Ver vista pública</a>
+    <% } %>
+    <a href="<%= base %>/admin/actividades" class="btn btn-secondary">← Volver</a>
+  </div>
 </div>
 
-<form action="<%= (typeof baseUrl !== 'undefined' ? baseUrl : '') %><%= activity ? '/admin/actividades/' + activity.id : '/admin/actividades' %>" method="POST" class="song-form">
-  <div class="form-group">
-    <label for="name">Nombre de la actividad *</label>
-    <input type="text" id="name" name="name" required value="<%= activity ? activity.name : '' %>" placeholder="Ej: Reunión de oración">
-  </div>
+<%- include('partials/admin-nav', { adminSection: 'activities' }) %>
 
-  <div class="form-group">
-    <label for="activity_date">Fecha *</label>
-    <input type="date" id="activity_date" name="activity_date" required value="<%= activity ? activity.activity_date : '' %>">
-  </div>
+<form action="<%= base %><%= isEdit ? '/admin/actividades/' + activity.id : '/admin/actividades' %>" method="POST" class="song-form">
+  <div class="section-card">
+    <div class="form-group">
+      <label for="name">Nombre de la actividad *</label>
+      <input type="text" id="name" name="name" required value="<%= isEdit ? activity.name : '' %>" placeholder="Ej: Reunión de oración">
+    </div>
 
-  <div class="form-group">
-    <label for="activity_time">Hora</label>
-    <input type="time" id="activity_time" name="activity_time" value="<%= activity ? activity.activity_time : '' %>">
-  </div>
+    <div class="form-group">
+      <label for="activity_date">Fecha *</label>
+      <input type="date" id="activity_date" name="activity_date" required value="<%= isEdit ? activity.activity_date : '' %>">
+    </div>
 
-  <div class="form-group">
-    <label for="detail">Detalle</label>
-    <textarea id="detail" name="detail" rows="4" placeholder="Información adicional, objetivo, tipo de culto, etc."><%= activity ? activity.detail : '' %></textarea>
+    <div class="form-group">
+      <label for="activity_time">Hora</label>
+      <input type="time" id="activity_time" name="activity_time" value="<%= isEdit ? activity.activity_time : '' %>">
+    </div>
+
+    <div class="form-group">
+      <label for="detail">Detalle</label>
+      <textarea id="detail" name="detail" rows="4" placeholder="Información adicional, objetivo, tipo de culto, etc."><%= isEdit ? activity.detail : '' %></textarea>
+    </div>
   </div>
 
   <div class="section-card">
@@ -46,16 +63,23 @@
           const selectedRoles = assigned
             ? (assigned.activityRoles && assigned.activityRoles.length ? assigned.activityRoles : availableRoles)
             : [];
+          const initial = (person.name || 'P').charAt(0).toUpperCase();
         %>
           <div class="person-assign-card<%= selected ? ' is-selected' : '' %>">
-            <label class="checkbox-inline person-assign-card__main">
+            <label class="person-assign-card__main">
               <input
                 type="checkbox"
+                class="picker-checkbox"
                 name="person_ids"
                 value="<%= person.id %>"
                 <%= selected ? 'checked' : '' %>
                 data-person-toggle
               >
+              <% if (person.photo_url) { %>
+                <img src="<%= photoSrc(person.photo_url) %>" alt="" class="person-assign-card__photo" referrerpolicy="no-referrer">
+              <% } else { %>
+                <span class="person-assign-card__photo person-assign-card__photo--fallback" aria-hidden="true"><%= initial %></span>
+              <% } %>
               <span class="song-picker-title"><%= person.name %></span>
             </label>
 
@@ -101,9 +125,12 @@
         %>
           <div class="song-picker-item<%= selected ? ' is-selected' : '' %>">
             <div class="song-picker-header">
-              <label class="checkbox-inline">
-                <input type="checkbox" name="song_ids" value="<%= song.id %>" <%= selected ? 'checked' : '' %> data-song-toggle>
+              <label class="song-picker-select">
+                <input type="checkbox" class="picker-checkbox" name="song_ids" value="<%= song.id %>" <%= selected ? 'checked' : '' %> data-song-toggle>
                 <span class="song-picker-title"><%= song.title %></span>
+                <% if (song.artist) { %>
+                  <small class="song-picker-artist"><%= song.artist %></small>
+                <% } %>
               </label>
               <input
                 type="number"
@@ -116,9 +143,6 @@
                 data-song-order
               >
             </div>
-            <% if (song.artist) { %>
-              <small class="song-picker-artist"><%= song.artist %></small>
-            <% } %>
           </div>
         <% }) %>
       </div>
@@ -126,10 +150,20 @@
   </div>
 
   <div class="form-actions">
-    <a href="<%= (typeof baseUrl !== 'undefined' ? baseUrl : '') %>/admin/actividades" class="btn btn-secondary">Cancelar</a>
-    <button type="submit" class="btn btn-primary"><%= activity ? '💾 Guardar' : '✅ Crear' %></button>
+    <a href="<%= base %>/admin/actividades" class="btn btn-secondary">Cancelar</a>
+    <button type="submit" class="btn btn-primary"><%= isEdit ? '💾 Guardar' : '✅ Crear' %></button>
   </div>
 </form>
+
+<% if (isEdit) { %>
+  <section class="danger-zone">
+    <h2>Zona de peligro</h2>
+    <p>La actividad se eliminará de forma permanente, junto con sus canciones y personas asignadas. Esta acción no se puede deshacer.</p>
+    <form action="<%= base %>/admin/actividades/<%= activity.id %>/delete" method="POST" onsubmit="return confirm(<%= JSON.stringify(deleteConfirm) %>)">
+      <button type="submit" class="btn btn-danger">Eliminar actividad</button>
+    </form>
+  </section>
+<% } %>
 
 <script>
   document.querySelectorAll('[data-song-toggle]').forEach((checkbox) => {

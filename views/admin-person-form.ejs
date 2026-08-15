@@ -1,6 +1,7 @@
 <%
   const base = typeof baseUrl !== 'undefined' ? baseUrl : '';
   const isEdit = !!person;
+  const currentPhoto = isEdit && person.photo_url ? photoSrc(person.photo_url) : '';
 %>
 
 <%- include('partials/head') %>
@@ -16,15 +17,54 @@
 <%- include('partials/admin-nav', { adminSection: 'people' }) %>
 
 <div class="section-card">
-  <form action="<%= base %><%= isEdit ? '/admin/personas/' + person.id : '/admin/personas' %>" method="POST" class="song-form">
+  <form
+    action="<%= base %><%= isEdit ? '/admin/personas/' + person.id : '/admin/personas' %>"
+    method="POST"
+    class="song-form"
+    enctype="multipart/form-data"
+  >
     <div class="form-group">
       <label for="name">Nombre *</label>
       <input type="text" id="name" name="name" required value="<%= isEdit ? person.name : '' %>" placeholder="Ej: Camilo Pérez">
     </div>
 
     <div class="form-group">
-      <label for="photo_url">Foto por URL</label>
-      <input type="url" id="photo_url" name="photo_url" value="<%= isEdit ? (person.photo_url || '') : '' %>" placeholder="https://...">
+      <label>Foto</label>
+      <p class="help-text">JPG, PNG, WebP o GIF. Máximo 1 MB.</p>
+
+      <div class="photo-upload" data-photo-upload<%= currentPhoto ? ' data-has-photo' : '' %>>
+        <button type="button" class="photo-upload__preview" data-photo-trigger aria-label="Elegir foto">
+          <span data-photo-preview>
+            <% if (currentPhoto) { %>
+              <img src="<%= currentPhoto %>" alt="<%= person.name %>" class="photo-upload__img" referrerpolicy="no-referrer">
+            <% } else { %>
+              <span class="photo-upload__placeholder" aria-hidden="true">+</span>
+            <% } %>
+          </span>
+        </button>
+
+        <div class="photo-upload__controls">
+          <input
+            type="file"
+            id="photo"
+            name="photo"
+            class="photo-upload__input"
+            accept="image/jpeg,image/png,image/webp,image/gif"
+            data-photo-input
+          >
+          <input type="hidden" name="remove_photo" value="0" data-photo-remove>
+
+          <div class="photo-upload__actions">
+            <button type="button" class="btn btn-secondary btn-sm" data-photo-trigger>
+              <span data-photo-trigger-label><%= currentPhoto ? 'Cambiar foto' : 'Elegir foto' %></span>
+            </button>
+            <button type="button" class="btn btn-danger btn-sm<%= currentPhoto ? '' : ' is-hidden' %>" data-photo-clear>
+              Quitar
+            </button>
+          </div>
+          <p class="photo-upload__filename" data-photo-filename></p>
+        </div>
+      </div>
     </div>
 
     <div class="form-group">
@@ -51,10 +91,78 @@
   <section class="danger-zone">
     <h2>Zona de peligro</h2>
     <p>La persona dejará de aparecer en el listado y no se podrá asignar a actividades nuevas, pero seguirá visible en las actividades donde ya participó.</p>
-    <form action="<%= base %>/admin/personas/<%= person.id %>/delete" method="POST" onsubmit="return confirm('¿Eliminar a <%= person.name %>? Seguirá visible en actividades pasadas.')">
+    <form
+      action="<%= base %>/admin/personas/<%= person.id %>/delete"
+      method="POST"
+      onsubmit="return confirm(<%= JSON.stringify('¿Eliminar a ' + person.name + '? Seguirá visible en actividades pasadas.') %>)"
+    >
       <button type="submit" class="btn btn-danger">Eliminar persona</button>
     </form>
   </section>
 <% } %>
+
+<script>
+  (function () {
+    const root = document.querySelector('[data-photo-upload]');
+    if (!root) return;
+
+    const input = root.querySelector('[data-photo-input]');
+    const preview = root.querySelector('[data-photo-preview]');
+    const remove = root.querySelector('[data-photo-remove]');
+    const clearBtn = root.querySelector('[data-photo-clear]');
+    const filename = root.querySelector('[data-photo-filename]');
+    const triggers = root.querySelectorAll('[data-photo-trigger]');
+    const triggerLabel = root.querySelector('[data-photo-trigger-label]');
+    const hadInitialPhoto = root.hasAttribute('data-has-photo');
+    let objectUrl = null;
+
+    const setPreview = (html) => {
+      if (preview) preview.innerHTML = html;
+    };
+
+    const setEmpty = () => {
+      setPreview('<span class="photo-upload__placeholder" aria-hidden="true">+</span>');
+      if (filename) filename.textContent = '';
+      if (triggerLabel) triggerLabel.textContent = 'Elegir foto';
+      if (clearBtn) clearBtn.classList.add('is-hidden');
+      root.removeAttribute('data-has-photo');
+    };
+
+    const setFilled = (src, name) => {
+      setPreview('<img src="' + src + '" alt="" class="photo-upload__img">');
+      if (filename) filename.textContent = name || '';
+      if (triggerLabel) triggerLabel.textContent = 'Cambiar foto';
+      if (clearBtn) clearBtn.classList.remove('is-hidden');
+      root.setAttribute('data-has-photo', '');
+    };
+
+    triggers.forEach((btn) => {
+      btn.addEventListener('click', () => input && input.click());
+    });
+
+    if (input) {
+      input.addEventListener('change', () => {
+        const file = input.files && input.files[0];
+        if (!file) return;
+        if (remove) remove.value = '0';
+        if (objectUrl) URL.revokeObjectURL(objectUrl);
+        objectUrl = URL.createObjectURL(file);
+        setFilled(objectUrl, file.name);
+      });
+    }
+
+    if (clearBtn) {
+      clearBtn.addEventListener('click', () => {
+        if (input) input.value = '';
+        if (objectUrl) {
+          URL.revokeObjectURL(objectUrl);
+          objectUrl = null;
+        }
+        if (remove) remove.value = hadInitialPhoto ? '1' : '0';
+        setEmpty();
+      });
+    }
+  })();
+</script>
 
 <%- include('partials/foot') %>

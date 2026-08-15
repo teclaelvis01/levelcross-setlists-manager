@@ -41,7 +41,7 @@
       %>
         <div class="activity-person-chip" title="<%= person.name %>">
           <% if (person.photo_url) { %>
-            <img src="<%= person.photo_url %>" alt="<%= person.name %>" class="person-avatar" referrerpolicy="no-referrer">
+            <img src="<%= photoSrc(person.photo_url) %>" alt="<%= person.name %>" class="person-avatar" referrerpolicy="no-referrer">
           <% } else { %>
             <span class="person-avatar person-avatar--fallback"><%= initial %></span>
           <% } %>

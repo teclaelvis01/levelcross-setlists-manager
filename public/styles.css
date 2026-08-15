@@ -242,11 +242,138 @@ main {
   margin-bottom: 0 !important;
 }
 
+.section-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px;
+  margin-bottom: 16px;
+}
+
+.section-card h2 {
+  font-size: 1rem;
+  margin-bottom: 8px;
+}
+
 .person-photo-fallback {
   width: 52px;
   height: 52px;
   flex-shrink: 0;
   font-size: 1rem;
+}
+
+.photo-upload {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.photo-upload[data-has-photo] .photo-upload__preview,
+.photo-upload:has(.photo-upload__img) .photo-upload__preview {
+  border-style: solid;
+}
+
+.photo-upload__preview {
+  width: 72px;
+  height: 72px;
+  padding: 0;
+  margin: 0;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 1px dashed var(--border);
+  background: var(--bg);
+  color: inherit;
+  font: inherit;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.photo-upload__preview > [data-photo-preview] {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.photo-upload__preview:hover {
+  border-color: var(--primary);
+  background: var(--bg-hover);
+}
+
+.photo-upload__preview:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.photo-upload__preview .photo-upload__img,
+.photo-upload__preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  border-radius: 50%;
+}
+
+.photo-upload__placeholder {
+  font-size: 1.4rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  line-height: 1;
+}
+
+.photo-upload__controls {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.photo-upload__input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.photo-upload__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.photo-upload__filename {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.photo-upload .is-hidden {
+  display: none !important;
+}
+
+.form-group .photo-upload__input,
+.form-group .photo-upload input[type='hidden'] {
+  width: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
 }
 
 .admin-backup {
@@ -678,15 +805,15 @@ main {
 
 .people-assign-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 8px;
 }
 
 .person-assign-card {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 14px;
+  gap: 6px;
+  padding: 8px 10px;
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -705,16 +832,88 @@ main {
 }
 
 .person-assign-card__main {
-  flex: 0 0 auto;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  min-width: 0;
 }
 
-.person-assign-card__roles {
+.person-assign-card__main .song-picker-title {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.person-assign-card__photo {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  object-fit: cover;
+  display: block;
+  border: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.person-assign-card__photo--fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(135deg, #6d5efc, #9a8cff);
+}
+
+.person-assign-card .person-assign-card__roles.chip-selector {
   margin-top: 0;
+  gap: 4px;
+}
+
+.person-assign-card__roles .chip-option {
+  padding: 2px 7px;
+  font-size: 0.65rem;
 }
 
 .person-assign-card__roles .chip-option:has(input:disabled) {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+.person-assign-card .help-text {
+  font-size: 0.7rem;
+  margin: 0;
+}
+
+.picker-checkbox {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.picker-checkbox:focus-visible + .person-assign-card__photo,
+.song-picker-select .picker-checkbox:focus-visible + .song-picker-title {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.picker-checkbox:focus-visible + .person-assign-card__photo {
+  border-radius: 50%;
+}
+
+.song-picker-select .picker-checkbox:focus-visible + .song-picker-title {
+  border-radius: 6px;
 }
 
 .activity-setlist {
@@ -1085,6 +1284,16 @@ main {
   gap: 10px;
 }
 
+.song-picker-select {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+  cursor: pointer;
+}
+
 .song-picker-title {
   font-weight: 600;
   line-height: 1.3;
@@ -1093,7 +1302,7 @@ main {
 .song-picker-artist {
   color: var(--text-muted);
   font-size: 0.8rem;
-  padding-left: 28px;
+  padding-left: 0;
 }
 
 .song-order-input {
