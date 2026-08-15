@@ -1,0 +1,56 @@
+<%
+  const base = typeof baseUrl !== 'undefined' ? baseUrl : '';
+%>
+
+<%- include('partials/head') %>
+
+<div class="page-header">
+  <div>
+    <h1>Actividades</h1>
+    <p class="page-subtitle">Ensayos, cultos y eventos programados</p>
+  </div>
+</div>
+
+<%- include('partials/public-nav', { publicSection: 'activities' }) %>
+
+<% if (!activities || activities.length === 0) { %>
+  <div class="empty-state">
+    <p>No hay actividades programadas todavía.</p>
+  </div>
+<% } else { %>
+  <div class="activity-list">
+    <% activities.forEach(activity => { %>
+      <a href="<%= base %>/actividades/<%= activity.slug %>" class="activity-card activity-card--link admin-entity-card">
+        <div class="activity-card__body">
+          <h3 class="admin-entity-card__title"><%= activity.name %></h3>
+          <div class="activity-card__meta">
+            <span><%= activity.activity_date %></span>
+            <% if (activity.activity_time) { %>
+              <span>· <%= activity.activity_time %></span>
+            <% } %>
+          </div>
+          <% if (activity.detail) { %>
+            <p class="activity-card__detail"><%= activity.detail %></p>
+          <% } %>
+          <% if (activity.people && activity.people.length > 0) { %>
+            <div class="person-avatar-row person-avatar-row--list" aria-label="Participantes">
+              <% activity.people.forEach(person => {
+                const initial = (person.name || 'P').charAt(0).toUpperCase();
+              %>
+                <div class="person-avatar-item" title="<%= person.name %>">
+                  <% if (person.photo_url) { %>
+                    <img src="<%= person.photo_url %>" alt="<%= person.name %>" class="person-avatar" referrerpolicy="no-referrer">
+                  <% } else { %>
+                    <span class="person-avatar person-avatar--fallback"><%= initial %></span>
+                  <% } %>
+                </div>
+              <% }) %>
+            </div>
+          <% } %>
+        </div>
+      </a>
+    <% }) %>
+  </div>
+<% } %>
+
+<%- include('partials/foot') %>

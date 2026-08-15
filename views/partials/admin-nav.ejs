@@ -1,0 +1,9 @@
+<%
+  const base = typeof baseUrl !== 'undefined' ? baseUrl : '';
+  const active = typeof adminSection !== 'undefined' ? adminSection : '';
+%>
+<nav class="section-nav" aria-label="Secciones de administración">
+  <a href="<%= base %>/admin" class="section-nav__link<%= active === 'songs' ? ' is-active' : '' %>">Canciones</a>
+  <a href="<%= base %>/admin/actividades" class="section-nav__link<%= active === 'activities' ? ' is-active' : '' %>">Actividades</a>
+  <a href="<%= base %>/admin/personas" class="section-nav__link<%= active === 'people' ? ' is-active' : '' %>">Personas</a>
+</nav>

@@ -1,0 +1,88 @@
+<%- include('partials/head') %>
+
+<%
+  const base = typeof baseUrl !== 'undefined' ? baseUrl : '';
+  const returnPath = base + '/actividades/' + activity.slug;
+%>
+
+<%- include('partials/public-nav', { publicSection: 'activities' }) %>
+
+<div class="viewer activity-detail">
+  <div class="viewer__header">
+    <div class="viewer__info">
+      <h1><%= activity.name %></h1>
+      <div class="activity-meta">
+        <span><%= activity.activity_date %></span>
+        <% if (activity.activity_time) { %>
+          <span class="activity-meta__sep">·</span>
+          <span><%= activity.activity_time %></span>
+        <% } %>
+        <% if (people && people.length > 0) { %>
+          <span class="activity-meta__sep">·</span>
+          <span><%= people.length %> participante<%= people.length === 1 ? '' : 's' %></span>
+        <% } %>
+      </div>
+    </div>
+    <div class="viewer__actions">
+      <a href="<%= base %>/actividades" class="btn btn-secondary">← Volver</a>
+    </div>
+  </div>
+
+  <% if (activity.detail) { %>
+    <p class="activity-detail__note"><%= activity.detail %></p>
+  <% } %>
+
+  <% if (people && people.length > 0) { %>
+    <div class="activity-people-compact">
+      <% people.forEach(person => {
+        const roles = person.activityRoles || person.roles || [];
+        const initial = (person.name || 'P').charAt(0).toUpperCase();
+        const roleText = roles.length ? roles.join(' · ') : 'Sin rol';
+      %>
+        <div class="activity-person-chip" title="<%= person.name %>">
+          <% if (person.photo_url) { %>
+            <img src="<%= person.photo_url %>" alt="<%= person.name %>" class="person-avatar" referrerpolicy="no-referrer">
+          <% } else { %>
+            <span class="person-avatar person-avatar--fallback"><%= initial %></span>
+          <% } %>
+          <span class="activity-person-chip__role"><%= roleText %></span>
+        </div>
+      <% }) %>
+    </div>
+  <% } %>
+
+  <section class="activity-setlist">
+    <div class="activity-setlist__header">
+      <h2>Canciones</h2>
+      <span class="activity-setlist__count"><%= songs.length %></span>
+    </div>
+
+    <% if (songs && songs.length > 0) { %>
+      <ol class="activity-setlist__list">
+        <% songs.forEach((song, index) => { %>
+          <li>
+            <a
+              class="activity-setlist__item"
+              href="<%= base %>/songs/<%= song.slug %>?from=<%= encodeURIComponent(returnPath) %>"
+            >
+              <span class="activity-setlist__pos"><%= index + 1 %></span>
+              <span class="activity-setlist__info">
+                <strong><%= song.title %></strong>
+                <% if (song.artist) { %>
+                  <small><%= song.artist %></small>
+                <% } %>
+              </span>
+              <span class="activity-setlist__chevron" aria-hidden="true">›</span>
+            </a>
+          </li>
+        <% }) %>
+      </ol>
+    <% } else { %>
+      <div class="empty-state compact">
+        <p>Aún no hay canciones asignadas a esta actividad.</p>
+      </div>
+    <% } %>
+  </section>
+</div>
+
+<%- include('partials/foot') %>

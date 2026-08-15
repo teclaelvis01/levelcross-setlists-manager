@@ -1,0 +1,8 @@
+<%
+  const base = typeof baseUrl !== 'undefined' ? baseUrl : '';
+  const active = typeof publicSection !== 'undefined' ? publicSection : '';
+%>
+<nav class="section-nav" aria-label="Secciones públicas">
+  <a href="<%= base %>/" class="section-nav__link<%= active === 'songs' ? ' is-active' : '' %>">Canciones</a>
+  <a href="<%= base %>/actividades" class="section-nav__link<%= active === 'activities' ? ' is-active' : '' %>">Actividades</a>
+</nav>

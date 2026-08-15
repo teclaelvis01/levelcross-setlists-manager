@@ -1,24 +1,34 @@
 <%- include('partials/head') %>
 
+<%
+  const base = typeof baseUrl !== 'undefined' ? baseUrl : '';
+  const safeSearch = typeof search !== 'undefined' ? search : '';
+  const safePageSize = typeof pageSize !== 'undefined' ? pageSize : 12;
+%>
+
 <div class="page-header">
-  <h1>Setlist</h1>
-  <p class="page-subtitle">Canciones disponibles</p>
+  <div>
+    <h1>Canciones</h1>
+    <p class="page-subtitle">Biblioteca de canciones disponibles</p>
+  </div>
 </div>
 
+<%- include('partials/public-nav', { publicSection: 'songs' }) %>
+
 <div class="search-bar">
-  <form action="<%= (typeof baseUrl !== 'undefined' ? baseUrl : '') %>/" method="GET">
-    <input type="text" name="search" placeholder="Buscar canción..." value="<%= search %>">
+  <form action="<%= base %>/" method="GET">
+    <input type="text" name="search" placeholder="Buscar canción..." value="<%= safeSearch %>">
     <input type="hidden" name="page" value="1">
-    <input type="hidden" name="pageSize" value="<%= pageSize || 12 %>">
+    <input type="hidden" name="pageSize" value="<%= safePageSize %>">
     <button type="submit" class="btn">🔍 Buscar</button>
   </form>
 </div>
 
 <% if (songs.length === 0) { %>
   <div class="empty-state">
-    <p>No hay canciones aún</p>
-    <% if (typeof isAuthenticated !== 'undefined' && isAuthenticated) { %>
-      <a href="<%= (typeof baseUrl !== 'undefined' ? baseUrl : '') %>/admin/songs/new" class="btn btn-primary">+ Crear primera canción</a>
+    <p><%= safeSearch ? 'No hay resultados para esa búsqueda' : 'No hay canciones aún' %></p>
+    <% if (!safeSearch && typeof isAuthenticated !== 'undefined' && isAuthenticated) { %>
+      <a href="<%= base %>/admin/songs/new" class="btn btn-primary">+ Crear primera canción</a>
     <% } %>
   </div>
 <% } else { %>
@@ -28,7 +38,7 @@
 
   <div class="song-list">
     <% songs.forEach(song => { %>
-      <a href="<%= (typeof baseUrl !== 'undefined' ? baseUrl : '') %>/songs/<%= song.slug %>" class="song-card">
+      <a href="<%= base %>/songs/<%= song.slug %>" class="song-card">
         <div class="song-card__info">
           <h3><%= song.title %></h3>
           <% if (song.artist) { %>
@@ -49,20 +59,14 @@
 
   <% if (typeof totalPages !== 'undefined' && totalPages > 1) { %>
     <div class="pagination">
-      <a href="<%= (typeof baseUrl !== 'undefined' ? baseUrl : '') %>/?search=<%= encodeURIComponent(search) %>&page=<%= currentPage - 1 %>&pageSize=<%= pageSize %>" class="btn btn-secondary <%= hasPrev ? '' : 'is-disabled' %>">
-        ← Anterior
-      </a>
+      <a href="<%= base %>/?search=<%= encodeURIComponent(search) %>&page=<%= currentPage - 1 %>&pageSize=<%= pageSize %>" class="btn btn-secondary <%= hasPrev ? '' : 'is-disabled' %>">← Anterior</a>
       <div class="pagination__pages">
         <% for (let pageNumber = Math.max(1, currentPage - 1); pageNumber <= Math.min(totalPages, currentPage + 1); pageNumber++) { %>
-          <a href="<%= (typeof baseUrl !== 'undefined' ? baseUrl : '') %>/?search=<%= encodeURIComponent(search) %>&page=<%= pageNumber %>&pageSize=<%= pageSize %>" class="pagination__page <%= pageNumber === currentPage ? 'is-active' : '' %>">
-            <%= pageNumber %>
-          </a>
+          <a href="<%= base %>/?search=<%= encodeURIComponent(search) %>&page=<%= pageNumber %>&pageSize=<%= pageSize %>" class="pagination__page <%= pageNumber === currentPage ? 'is-active' : '' %>"><%= pageNumber %></a>
         <% } %>
       </div>
-      <a href="<%= (typeof baseUrl !== 'undefined' ? baseUrl : '') %>/?search=<%= encodeURIComponent(search) %>&page=<%= currentPage + 1 %>&pageSize=<%= pageSize %>" class="btn btn-secondary <%= hasNext ? '' : 'is-disabled' %>">
-        Siguiente →
-      </a>
-      <select class="page-size-select" onchange="window.location.href='<%= (typeof baseUrl !== 'undefined' ? baseUrl : '') %>/?search=<%= encodeURIComponent(search) %>&page=1&pageSize=' + this.value">
+      <a href="<%= base %>/?search=<%= encodeURIComponent(search) %>&page=<%= currentPage + 1 %>&pageSize=<%= pageSize %>" class="btn btn-secondary <%= hasNext ? '' : 'is-disabled' %>">Siguiente →</a>
+      <select class="page-size-select" onchange="window.location.href='<%= base %>/?search=<%= encodeURIComponent(search) %>&page=1&pageSize=' + this.value">
         <option value="5" <%= pageSize === 5 ? 'selected' : '' %>>5 por página</option>
         <option value="10" <%= pageSize === 10 ? 'selected' : '' %>>10 por página</option>
         <option value="50" <%= pageSize === 50 ? 'selected' : '' %>>50 por página</option>

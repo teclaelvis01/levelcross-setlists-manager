@@ -1,0 +1,60 @@
+<%
+  const base = typeof baseUrl !== 'undefined' ? baseUrl : '';
+  const isEdit = !!person;
+%>
+
+<%- include('partials/head') %>
+
+<div class="page-header">
+  <div>
+    <h1><%= isEdit ? 'Editar persona' : 'Nueva persona' %></h1>
+    <p class="page-subtitle">Define el nombre, la foto y los roles musicales</p>
+  </div>
+  <a href="<%= base %>/admin/personas" class="btn btn-secondary">← Volver</a>
+</div>
+
+<%- include('partials/admin-nav', { adminSection: 'people' }) %>
+
+<div class="section-card">
+  <form action="<%= base %><%= isEdit ? '/admin/personas/' + person.id : '/admin/personas' %>" method="POST" class="song-form">
+    <div class="form-group">
+      <label for="name">Nombre *</label>
+      <input type="text" id="name" name="name" required value="<%= isEdit ? person.name : '' %>" placeholder="Ej: Camilo Pérez">
+    </div>
+
+    <div class="form-group">
+      <label for="photo_url">Foto por URL</label>
+      <input type="url" id="photo_url" name="photo_url" value="<%= isEdit ? (person.photo_url || '') : '' %>" placeholder="https://...">
+    </div>
+
+    <div class="form-group">
+      <label>Roles *</label>
+      <p class="help-text">Selecciona todos los roles que esta persona puede desempeñar.</p>
+      <div class="chip-selector">
+        <% roles.forEach(role => { %>
+          <label class="chip-option">
+            <input type="checkbox" name="roles" value="<%= role %>" <%= isEdit && Array.isArray(person.roles) && person.roles.includes(role) ? 'checked' : '' %>>
+            <span><%= role %></span>
+          </label>
+        <% }) %>
+      </div>
+    </div>
+
+    <div class="form-actions">
+      <a href="<%= base %>/admin/personas" class="btn btn-secondary">Cancelar</a>
+      <button type="submit" class="btn btn-primary"><%= isEdit ? '💾 Guardar' : '✅ Crear' %></button>
+    </div>
+  </form>
+</div>
+
+<% if (isEdit) { %>
+  <section class="danger-zone">
+    <h2>Zona de peligro</h2>
+    <p>La persona dejará de aparecer en el listado y no se podrá asignar a actividades nuevas, pero seguirá visible en las actividades donde ya participó.</p>
+    <form action="<%= base %>/admin/personas/<%= person.id %>/delete" method="POST" onsubmit="return confirm('¿Eliminar a <%= person.name %>? Seguirá visible en actividades pasadas.')">
+      <button type="submit" class="btn btn-danger">Eliminar persona</button>
+    </form>
+  </section>
+<% } %>
+
+<%- include('partials/foot') %>

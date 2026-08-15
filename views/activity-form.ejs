@@ -1,0 +1,183 @@
+<%- include('partials/head') %>
+
+<div class="page-header">
+  <div>
+    <h1><%= activity ? '✏️ Editar actividad' : '➕ Nueva actividad' %></h1>
+    <p class="page-subtitle">Define la actividad, las canciones y las personas responsables</p>
+  </div>
+  <a href="<%= (typeof baseUrl !== 'undefined' ? baseUrl : '') %>/admin/actividades" class="btn btn-secondary">← Volver</a>
+</div>
+
+<form action="<%= (typeof baseUrl !== 'undefined' ? baseUrl : '') %><%= activity ? '/admin/actividades/' + activity.id : '/admin/actividades' %>" method="POST" class="song-form">
+  <div class="form-group">
+    <label for="name">Nombre de la actividad *</label>
+    <input type="text" id="name" name="name" required value="<%= activity ? activity.name : '' %>" placeholder="Ej: Reunión de oración">
+  </div>
+
+  <div class="form-group">
+    <label for="activity_date">Fecha *</label>
+    <input type="date" id="activity_date" name="activity_date" required value="<%= activity ? activity.activity_date : '' %>">
+  </div>
+
+  <div class="form-group">
+    <label for="activity_time">Hora</label>
+    <input type="time" id="activity_time" name="activity_time" value="<%= activity ? activity.activity_time : '' %>">
+  </div>
+
+  <div class="form-group">
+    <label for="detail">Detalle</label>
+    <textarea id="detail" name="detail" rows="4" placeholder="Información adicional, objetivo, tipo de culto, etc."><%= activity ? activity.detail : '' %></textarea>
+  </div>
+
+  <div class="section-card">
+    <h2>👥 Personas asignadas</h2>
+    <p class="help-text">Marca a la persona y elige qué roles cumplirá en esta actividad.</p>
+    <% if (!people || people.length === 0) { %>
+      <div class="empty-state compact">
+        <p>No hay personas creadas. Crea personas primero desde el panel de admin.</p>
+      </div>
+    <% } else { %>
+      <div class="people-assign-grid">
+        <% const selectedPeople = typeof assignedPeople !== 'undefined' && assignedPeople ? assignedPeople : []; %>
+        <% people.forEach(person => {
+          const assigned = selectedPeople.find(p => p.id === person.id);
+          const selected = !!assigned;
+          const availableRoles = person.roles || [];
+          const selectedRoles = assigned
+            ? (assigned.activityRoles && assigned.activityRoles.length ? assigned.activityRoles : availableRoles)
+            : [];
+        %>
+          <div class="person-assign-card<%= selected ? ' is-selected' : '' %>">
+            <label class="checkbox-inline person-assign-card__main">
+              <input
+                type="checkbox"
+                name="person_ids"
+                value="<%= person.id %>"
+                <%= selected ? 'checked' : '' %>
+                data-person-toggle
+              >
+              <span class="song-picker-title"><%= person.name %></span>
+            </label>
+
+            <% if (availableRoles.length > 0) { %>
+              <div class="chip-selector person-assign-card__roles" data-person-roles>
+                <% availableRoles.forEach(role => {
+                  const roleChecked = selected && selectedRoles.includes(role);
+                %>
+                  <label class="chip-option">
+                    <input
+                      type="checkbox"
+                      name="person_roles[<%= person.id %>][]"
+                      value="<%= role %>"
+                      <%= roleChecked ? 'checked' : '' %>
+                      <%= selected ? '' : 'disabled' %>
+                      data-person-role
+                    >
+                    <span><%= role %></span>
+                  </label>
+                <% }) %>
+              </div>
+            <% } else { %>
+              <p class="help-text">Esta persona no tiene roles configurados.</p>
+            <% } %>
+          </div>
+        <% }) %>
+      </div>
+    <% } %>
+  </div>
+
+  <div class="section-card">
+    <h2>🎵 Canciones en orden</h2>
+    <% if (!songs || songs.length === 0) { %>
+      <div class="empty-state compact">
+        <p>No hay canciones creadas aún.</p>
+      </div>
+    <% } else { %>
+      <div class="song-picker-grid">
+        <% const selectedSongs = typeof assignedSongs !== 'undefined' && assignedSongs ? assignedSongs : []; %>
+        <% songs.forEach(song => {
+          const selected = selectedSongs.some(s => s.id === song.id);
+          const assignedSong = selectedSongs.find(s => s.id === song.id);
+        %>
+          <div class="song-picker-item<%= selected ? ' is-selected' : '' %>">
+            <div class="song-picker-header">
+              <label class="checkbox-inline">
+                <input type="checkbox" name="song_ids" value="<%= song.id %>" <%= selected ? 'checked' : '' %> data-song-toggle>
+                <span class="song-picker-title"><%= song.title %></span>
+              </label>
+              <input
+                type="number"
+                class="song-order-input"
+                name="song_order[<%= song.id %>]"
+                min="1"
+                value="<%= assignedSong && assignedSong.position ? assignedSong.position : 1 %>"
+                aria-label="Orden de <%= song.title %>"
+                <%= selected ? '' : 'disabled' %>
+                data-song-order
+              >
+            </div>
+            <% if (song.artist) { %>
+              <small class="song-picker-artist"><%= song.artist %></small>
+            <% } %>
+          </div>
+        <% }) %>
+      </div>
+    <% } %>
+  </div>
+
+  <div class="form-actions">
+    <a href="<%= (typeof baseUrl !== 'undefined' ? baseUrl : '') %>/admin/actividades" class="btn btn-secondary">Cancelar</a>
+    <button type="submit" class="btn btn-primary"><%= activity ? '💾 Guardar' : '✅ Crear' %></button>
+  </div>
+</form>
+
+<script>
+  document.querySelectorAll('[data-song-toggle]').forEach((checkbox) => {
+    const item = checkbox.closest('.song-picker-item');
+    const orderInput = item && item.querySelector('[data-song-order]');
+    if (!item || !orderInput) return;
+
+    const sync = () => {
+      orderInput.disabled = !checkbox.checked;
+      item.classList.toggle('is-selected', checkbox.checked);
+    };
+
+    checkbox.addEventListener('change', sync);
+    sync();
+  });
+
+  document.querySelectorAll('[data-person-toggle]').forEach((checkbox) => {
+    const card = checkbox.closest('.person-assign-card');
+    if (!card) return;
+    const roleInputs = card.querySelectorAll('[data-person-role]');
+
+    const sync = () => {
+      const checked = checkbox.checked;
+      card.classList.toggle('is-selected', checked);
+      roleInputs.forEach((roleInput) => {
+        roleInput.disabled = !checked;
+        if (checked && !card.dataset.rolesTouched) {
+          roleInput.checked = true;
+        }
+        if (!checked) {
+          roleInput.checked = false;
+          delete card.dataset.rolesTouched;
+        }
+      });
+    };
+
+    roleInputs.forEach((roleInput) => {
+      roleInput.addEventListener('change', () => {
+        card.dataset.rolesTouched = '1';
+      });
+    });
+
+    checkbox.addEventListener('change', sync);
+    if (checkbox.checked) {
+      card.dataset.rolesTouched = '1';
+    }
+    sync();
+  });
+</script>
+
+<%- include('partials/foot') %>

@@ -1,21 +1,23 @@
+<% 
+  const safeSongs = typeof songs !== 'undefined' ? songs : [];
+  const safeSearch = typeof search !== 'undefined' ? search : '';
+  const safePageSize = typeof pageSize !== 'undefined' ? pageSize : 12;
+  const base = typeof baseUrl !== 'undefined' ? baseUrl : '';
+%>
+
 <%- include('partials/head') %>
 
 <div class="page-header">
   <div>
-    <h1>📋 Admin</h1>
-    <p class="page-subtitle">Gestiona las canciones del setlist</p>
+    <h1>Canciones</h1>
+    <p class="page-subtitle">Biblioteca de canciones del ministerio</p>
   </div>
-  <a href="<%= (typeof baseUrl !== 'undefined' ? baseUrl : '') %>/admin/songs/new" class="btn btn-primary">+ Nueva Canción</a>
+  <div class="header-actions">
+    <a href="<%= base %>/admin/songs/new" class="btn btn-primary">+ Nueva canción</a>
+  </div>
 </div>
 
-<div class="search-bar">
-  <form action="<%= (typeof baseUrl !== 'undefined' ? baseUrl : '') %>/admin" method="GET">
-    <input type="text" name="search" placeholder="Buscar canción..." value="<%= search %>">
-    <input type="hidden" name="page" value="1">
-    <input type="hidden" name="pageSize" value="<%= pageSize || 12 %>">
-    <button type="submit" class="btn">🔍 Buscar</button>
-  </form>
-</div>
+<%- include('partials/admin-nav', { adminSection: 'songs' }) %>
 
 <% if (typeof dbSuccess !== 'undefined' && dbSuccess) { %>
   <div class="alert alert-success"><%= dbSuccess %></div>
@@ -24,20 +26,31 @@
   <div class="alert alert-error"><%= dbError %></div>
 <% } %>
 
-<% if (songs.length === 0) { %>
+<div class="search-bar">
+  <form action="<%= base %>/admin" method="GET">
+    <input type="text" name="search" placeholder="Buscar canción..." value="<%= safeSearch %>">
+    <input type="hidden" name="page" value="1">
+    <input type="hidden" name="pageSize" value="<%= safePageSize %>">
+    <button type="submit" class="btn">🔍 Buscar</button>
+  </form>
+</div>
+
+<% if (safeSongs.length === 0) { %>
   <div class="empty-state">
-    <p>No hay canciones aún</p>
-    <a href="<%= (typeof baseUrl !== 'undefined' ? baseUrl : '') %>/admin/songs/new" class="btn btn-primary">+ Crear primera canción</a>
+    <p><%= safeSearch ? 'No hay resultados para esa búsqueda' : 'No hay canciones aún' %></p>
+    <% if (!safeSearch) { %>
+      <a href="<%= base %>/admin/songs/new" class="btn btn-primary">+ Crear primera canción</a>
+    <% } %>
   </div>
 <% } else { %>
   <div class="results-meta">
-    <p>Mostrando <%= songs.length %> de <%= totalCount %> canciones</p>
+    <p>Mostrando <%= safeSongs.length %> de <%= totalCount %> canciones</p>
   </div>
 
   <div class="song-list admin-list">
-    <% songs.forEach(song => { %>
+    <% safeSongs.forEach(song => { %>
       <div class="song-card">
-        <a href="<%= (typeof baseUrl !== 'undefined' ? baseUrl : '') %>/songs/<%= song.slug %>" class="song-card__link">
+        <a href="<%= base %>/songs/<%= song.slug %>" class="song-card__link">
           <div class="song-card__info">
             <h3><%= song.title %></h3>
             <% if (song.artist) { %>
@@ -47,14 +60,10 @@
         </a>
         <div class="song-card__actions">
           <% if (song.audio_url) { %>
-            <a href="<%= song.audio_url %>" target="_blank" rel="noopener noreferrer" class="btn btn-icon" title="Escuchar">
-              🔊
-            </a>
+            <a href="<%= song.audio_url %>" target="_blank" rel="noopener noreferrer" class="btn btn-icon" title="Escuchar">🔊</a>
           <% } %>
-          <a href="<%= (typeof baseUrl !== 'undefined' ? baseUrl : '') %>/admin/songs/<%= song.slug %>/edit" class="btn btn-icon" title="Editar">
-            ✏️
-          </a>
-          <form action="<%= (typeof baseUrl !== 'undefined' ? baseUrl : '') %>/admin/songs/<%= song.slug %>/delete" method="POST" class="inline-form" onsubmit="return confirm('¿Eliminar esta canción?')">
+          <a href="<%= base %>/admin/songs/<%= song.slug %>/edit" class="btn btn-icon" title="Editar">✏️</a>
+          <form action="<%= base %>/admin/songs/<%= song.slug %>/delete" method="POST" class="inline-form" onsubmit="return confirm('¿Eliminar esta canción?')">
             <button type="submit" class="btn btn-icon btn-danger" title="Eliminar">🗑️</button>
           </form>
         </div>
@@ -64,20 +73,14 @@
 
   <% if (typeof totalPages !== 'undefined' && totalPages > 1) { %>
     <div class="pagination">
-      <a href="<%= (typeof baseUrl !== 'undefined' ? baseUrl : '') %>/admin?search=<%= encodeURIComponent(search) %>&page=<%= currentPage - 1 %>&pageSize=<%= pageSize %>" class="btn btn-secondary <%= hasPrev ? '' : 'is-disabled' %>">
-        ← Anterior
-      </a>
+      <a href="<%= base %>/admin?search=<%= encodeURIComponent(search) %>&page=<%= currentPage - 1 %>&pageSize=<%= pageSize %>" class="btn btn-secondary <%= hasPrev ? '' : 'is-disabled' %>">← Anterior</a>
       <div class="pagination__pages">
         <% for (let pageNumber = Math.max(1, currentPage - 1); pageNumber <= Math.min(totalPages, currentPage + 1); pageNumber++) { %>
-          <a href="<%= (typeof baseUrl !== 'undefined' ? baseUrl : '') %>/admin?search=<%= encodeURIComponent(search) %>&page=<%= pageNumber %>&pageSize=<%= pageSize %>" class="pagination__page <%= pageNumber === currentPage ? 'is-active' : '' %>">
-            <%= pageNumber %>
-          </a>
+          <a href="<%= base %>/admin?search=<%= encodeURIComponent(search) %>&page=<%= pageNumber %>&pageSize=<%= pageSize %>" class="pagination__page <%= pageNumber === currentPage ? 'is-active' : '' %>"><%= pageNumber %></a>
         <% } %>
       </div>
-      <a href="<%= (typeof baseUrl !== 'undefined' ? baseUrl : '') %>/admin?search=<%= encodeURIComponent(search) %>&page=<%= currentPage + 1 %>&pageSize=<%= pageSize %>" class="btn btn-secondary <%= hasNext ? '' : 'is-disabled' %>">
-        Siguiente →
-      </a>
-      <select class="page-size-select" onchange="window.location.href='<%= (typeof baseUrl !== 'undefined' ? baseUrl : '') %>/admin?search=<%= encodeURIComponent(search) %>&page=1&pageSize=' + this.value">
+      <a href="<%= base %>/admin?search=<%= encodeURIComponent(search) %>&page=<%= currentPage + 1 %>&pageSize=<%= pageSize %>" class="btn btn-secondary <%= hasNext ? '' : 'is-disabled' %>">Siguiente →</a>
+      <select class="page-size-select" onchange="window.location.href='<%= base %>/admin?search=<%= encodeURIComponent(search) %>&page=1&pageSize=' + this.value">
         <option value="5" <%= pageSize === 5 ? 'selected' : '' %>>5 por página</option>
         <option value="10" <%= pageSize === 10 ? 'selected' : '' %>>10 por página</option>
         <option value="50" <%= pageSize === 50 ? 'selected' : '' %>>50 por página</option>
@@ -86,22 +89,18 @@
   <% } %>
 <% } %>
 
-<hr class="section-divider">
-
-<div class="backup-section">
-  <h2>💾 Backup de Base de Datos</h2>
-  <p class="backup-desc">Exporta o importa la base de datos SQLite completa para hacer copias de seguridad o restaurar datos.</p>
+<details class="admin-backup">
+  <summary>Backup de base de datos</summary>
+  <p class="backup-desc">Exporta o importa la base de datos SQLite completa.</p>
   <div class="backup-actions">
-    <a href="<%= (typeof baseUrl !== 'undefined' ? baseUrl : '') %>/admin/export" class="btn btn-primary">
-      ⬇️ Exportar DB
-    </a>
-    <form action="<%= (typeof baseUrl !== 'undefined' ? baseUrl : '') %>/admin/import" method="POST" enctype="multipart/form-data" class="inline-form">
+    <a href="<%= base %>/admin/export" class="btn btn-primary">⬇️ Exportar DB</a>
+    <form action="<%= base %>/admin/import" method="POST" enctype="multipart/form-data" class="inline-form">
       <label class="btn btn-secondary import-label">
         📤 Importar DB
         <input type="file" name="database" accept=".db,.sqlite,.sqlite3" required hidden onchange="this.form.submit()">
       </label>
     </form>
   </div>
-</div>
+</details>
 
 <%- include('partials/foot') %>

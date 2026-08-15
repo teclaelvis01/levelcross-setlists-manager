@@ -1,5 +1,13 @@
 <%- include('partials/head') %>
 
+<%
+  const base = typeof baseUrl !== 'undefined' ? baseUrl : '';
+  const backHref = typeof returnTo === 'string' && returnTo ? returnTo : (base + '/');
+  const section = typeof returnTo === 'string' && returnTo && returnTo.indexOf('/actividades/') !== -1 ? 'activities' : 'songs';
+%>
+
+<%- include('partials/public-nav', { publicSection: section }) %>
+
 <div class="viewer">
   <div class="viewer__header">
     <div class="viewer__info">
@@ -15,9 +23,9 @@
         </a>
       <% } %>
       <% if (typeof isAuthenticated !== 'undefined' && isAuthenticated) { %>
-        <a href="<%= (typeof baseUrl !== 'undefined' ? baseUrl : '') %>/admin/songs/<%= song.slug %>/edit" class="btn btn-secondary">✏️ Editar</a>
+        <a href="<%= base %>/admin/songs/<%= song.slug %>/edit" class="btn btn-secondary">✏️ Editar</a>
       <% } %>
-      <a href="<%= (typeof baseUrl !== 'undefined' ? baseUrl : '') %>/" class="btn btn-secondary">← Volver</a>
+      <a href="<%= backHref %>" class="btn btn-secondary">← Volver</a>
     </div>
   </div>
 

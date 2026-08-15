@@ -1,0 +1,48 @@
+<%
+  const base = typeof baseUrl !== 'undefined' ? baseUrl : '';
+%>
+
+<%- include('partials/head') %>
+
+<div class="page-header">
+  <div>
+    <h1>Personas</h1>
+    <p class="page-subtitle">Músicos y roles disponibles para las actividades</p>
+  </div>
+  <div class="header-actions">
+    <a href="<%= base %>/admin/personas/nueva" class="btn btn-primary">+ Nueva persona</a>
+  </div>
+</div>
+
+<%- include('partials/admin-nav', { adminSection: 'people' }) %>
+
+<% if (!people || people.length === 0) { %>
+  <div class="empty-state">
+    <p>No hay personas creadas aún</p>
+    <a href="<%= base %>/admin/personas/nueva" class="btn btn-primary">+ Crear primera persona</a>
+  </div>
+<% } else { %>
+  <div class="person-list admin-list">
+    <% people.forEach(personItem => { %>
+      <a href="<%= base %>/admin/personas/<%= personItem.id %>/editar" class="person-card admin-entity-card person-card--link">
+        <div class="person-card__content">
+          <% if (personItem.photo_url) { %>
+            <img src="<%= personItem.photo_url %>" alt="<%= personItem.name %>" class="person-photo" referrerpolicy="no-referrer">
+          <% } else { %>
+            <span class="person-avatar person-avatar--fallback person-photo-fallback"><%= (personItem.name || 'P').charAt(0).toUpperCase() %></span>
+          <% } %>
+          <div>
+            <h3 class="admin-entity-card__title"><%= personItem.name %></h3>
+            <div class="chip-list">
+              <% (personItem.roles || []).forEach(role => { %>
+                <span class="chip"><%= role %></span>
+              <% }) %>
+            </div>
+          </div>
+        </div>
+      </a>
+    <% }) %>
+  </div>
+<% } %>
+
+<%- include('partials/foot') %>
