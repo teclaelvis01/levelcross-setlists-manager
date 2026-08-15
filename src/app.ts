@@ -452,6 +452,48 @@ function collectSelectedRoles(input: unknown): string[] {
   return [...new Set(values)];
 }
 
+/** ChordPro / ChartPro chord token (e.g. G, Em7, Dsus4, C/G). */
+function isChordToken(token: string): boolean {
+  return /^[A-G][#b]?(?:maj|min|dim|aug|sus|add|m|M)?\d*(?:\([^)]*\))?(?:\/[A-G][#b]?)?$/.test(
+    token.trim()
+  );
+}
+
+type ChordSegment = { chord: string | null; text: string };
+
+/** Parse a ChartPro line into chord+lyric columns (chord sits above following text). */
+function parseChordProLine(line: string): ChordSegment[] {
+  const segments: ChordSegment[] = [];
+  let remaining = line;
+  let current: ChordSegment = { chord: null, text: '' };
+
+  while (remaining.length > 0) {
+    const chordMatch = remaining.match(/^\[([^\]]*)\]/);
+    if (chordMatch) {
+      if (current.chord !== null || current.text) {
+        segments.push(current);
+      }
+      current = { chord: chordMatch[1], text: '' };
+      remaining = remaining.slice(chordMatch[0].length);
+      continue;
+    }
+
+    const nextBracket = remaining.indexOf('[');
+    if (nextBracket === -1) {
+      current.text += remaining;
+      remaining = '';
+    } else {
+      current.text += remaining.slice(0, nextBracket);
+      remaining = remaining.slice(nextBracket);
+    }
+  }
+
+  if (current.chord !== null || current.text) {
+    segments.push(current);
+  }
+  return segments;
+}
+
 function renderLyrics(lyrics: string): string {
   if (!lyrics) return '';
   const lines = lyrics.split('\n');
@@ -460,40 +502,32 @@ function renderLyrics(lyrics: string): string {
     const trimmed = line.trim();
     if (trimmed === '') {
       html += '<div class="lyrics-line lyrics-line--empty">&nbsp;</div>';
-    } else if (/^\[[^\]]+\]$/.test(trimmed) && !trimmed.includes('] [')) {
-      html += '<div class="lyrics-section">' + escapeHtml(trimmed) + '</div>';
-    } else {
-      const parts: { type: 'chord' | 'text'; text: string }[] = [];
-      let remaining = line;
-      while (remaining.length > 0) {
-        const chordMatch = remaining.match(/^\[([^\]]+)\]/);
-        if (chordMatch) {
-          parts.push({ type: 'chord', text: chordMatch[1] });
-          remaining = remaining.slice(chordMatch[0].length);
-        } else {
-          const nextChord = remaining.match(/\[([^\]]+)\]/);
-          if (nextChord) {
-            const textBefore = remaining.slice(0, nextChord.index);
-            if (textBefore) parts.push({ type: 'text', text: textBefore });
-            remaining = remaining.slice(nextChord.index!);
-          } else {
-            parts.push({ type: 'text', text: remaining });
-            remaining = '';
-          }
-        }
-      }
-      const chordSpans = parts.map(p =>
-        p.type === 'chord'
-          ? '<span class="chord">' + escapeHtml(p.text) + '</span>'
-          : '<span class="chord"></span>'
-      );
-      const textSpans = parts.map(p =>
-        p.type === 'text'
-          ? '<span class="lyrics-text">' + escapeHtml(p.text) + '</span>'
-          : '<span class="lyrics-text"></span>'
-      );
-      html += '<div class="lyrics-line"><div class="chord-row">' + chordSpans.join('') + '</div><div class="text-row">' + textSpans.join('') + '</div></div>';
+      continue;
     }
+
+    const sectionMatch = trimmed.match(/^\[([^\]]+)\]$/);
+    if (sectionMatch && !isChordToken(sectionMatch[1])) {
+      html += '<div class="lyrics-section">' + escapeHtml(sectionMatch[1]) + '</div>';
+      continue;
+    }
+
+    const blocks = parseChordProLine(line)
+      .map((seg) => {
+        const chordHtml =
+          seg.chord !== null
+            ? '<span class="chord">' + escapeHtml(seg.chord) + '</span>'
+            : '<span class="chord chord--spacer" aria-hidden="true"></span>';
+        return (
+          '<span class="chord-block">' +
+          chordHtml +
+          '<span class="lyrics-text">' +
+          escapeHtml(seg.text) +
+          '</span></span>'
+        );
+      })
+      .join('');
+
+    html += '<div class="lyrics-line">' + blocks + '</div>';
   }
   return html;
 }

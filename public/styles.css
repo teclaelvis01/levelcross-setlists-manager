@@ -2502,6 +2502,9 @@ body.photo-crop-open {
 }
 
 .lyrics-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
   margin-bottom: 8px;
   font-size: 1rem;
   line-height: 1.6;
@@ -2509,39 +2512,38 @@ body.photo-crop-open {
 }
 
 .lyrics-line--empty {
+  display: block;
   height: 12px;
 }
 
-.chord-row {
-  display: flex;
-  flex-wrap: wrap;
-  line-height: 1.4;
-  min-height: 1.4em;
-}
-
-.text-row {
-  display: flex;
-  flex-wrap: wrap;
-  line-height: 1.6;
+.chord-block {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  max-width: 100%;
 }
 
 .chord {
   font-weight: 700;
   color: var(--chord-color);
-  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-family: inherit;
   font-size: 0.938rem;
+  line-height: 1.4;
   white-space: pre;
-  min-width: 1px;
+  min-height: 1.4em;
+}
+
+.chord:not(.chord--spacer) {
+  /* Keep adjacent chords from colliding when wider than the lyric under them */
+  padding-right: 0.75ch;
+}
+
+.chord--spacer {
+  visibility: hidden;
 }
 
 .lyrics-text {
   white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.chord:empty,
-.lyrics-text:empty {
-  min-width: 0.5em;
 }
 
 /* Footer */
