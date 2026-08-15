@@ -251,7 +251,7 @@ function getActivityRelations(activityId: number) {
     return {
       ...person,
       roles: availableRoles,
-      activityRoles: activityRoles.length > 0 ? activityRoles : availableRoles,
+      activityRoles,
     };
   });
   return { activity, songs, people };
@@ -271,7 +271,8 @@ function collectActivityRolesByPerson(input: unknown): Record<number, string[]> 
 
   const result: Record<number, string[]> = {};
   for (const [personIdRaw, rolesRaw] of Object.entries(input as Record<string, unknown>)) {
-    const personId = Number(personIdRaw);
+    // Form fields use person_roles[p123][] so qs keeps an object (numeric keys become arrays).
+    const personId = Number(String(personIdRaw).replace(/^p/i, ''));
     if (!Number.isInteger(personId) || personId <= 0) continue;
     result[personId] = collectSelectedRoles(rolesRaw);
   }
@@ -293,11 +294,14 @@ function saveActivityPeople(activityId: number, personIds: number[], rolesByPers
       const availableRoles = getPersonRoles(personId);
       insertPerson.run(activityId, personId);
 
-      if (availableRoles.length === 0) continue;
-
+      const submitted = Object.prototype.hasOwnProperty.call(rolesByPerson, personId);
       const selectedRoles = (rolesByPerson[personId] || [])
         .filter((role) => availableRoles.includes(role));
-      const rolesToSave = selectedRoles.length > 0 ? selectedRoles : availableRoles;
+      // Respect unchecked roles. Only default to all available when nothing was submitted
+      // (e.g. person without role checkboxes / legacy clients).
+      const rolesToSave = submitted
+        ? selectedRoles
+        : (availableRoles.length > 0 ? availableRoles : []);
 
       for (const role of rolesToSave) {
         insertRole.run(activityId, personId, role);

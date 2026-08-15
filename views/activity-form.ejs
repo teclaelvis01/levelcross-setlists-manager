@@ -73,7 +73,7 @@
             <% } %>
             <% selectedPeople.forEach((person) => {
               const availableRoles = person.roles || [];
-              const selectedRoles = person.activityRoles && person.activityRoles.length
+              const selectedRoles = Array.isArray(person.activityRoles)
                 ? person.activityRoles
                 : availableRoles;
               const initial = (person.name || 'P').charAt(0).toUpperCase();
@@ -97,11 +97,13 @@
                   <strong><%= person.name %></strong>
                   <% if (availableRoles.length > 0) { %>
                     <div class="chip-selector setlist-item__roles" data-person-roles>
+                      <!-- Prefixed person key so qs keeps an object; hidden marks submitted when all unchecked -->
+                      <input type="hidden" name="person_roles[p<%= person.id %>][]" value="">
                       <% availableRoles.forEach((role) => { %>
                         <label class="chip-option" data-role-chip>
                           <input
                             type="checkbox"
-                            name="person_roles[<%= person.id %>][]"
+                            name="person_roles[p<%= person.id %>][]"
                             value="<%= role %>"
                             <%= selectedRoles.includes(role) ? 'checked' : '' %>
                             data-person-role
@@ -582,10 +584,15 @@
       if (roles && roles.length > 0) {
         rolesWrap.hidden = false;
         if (noRoles) noRoles.hidden = true;
+        const present = document.createElement('input');
+        present.type = 'hidden';
+        present.name = 'person_roles[p' + personId + '][]';
+        present.value = '';
+        rolesWrap.appendChild(present);
         roles.forEach((role) => {
           const roleNode = roleTemplate.content.firstElementChild.cloneNode(true);
           const input = roleNode.querySelector('[data-person-role]');
-          input.name = 'person_roles[' + personId + '][]';
+          input.name = 'person_roles[p' + personId + '][]';
           input.value = role;
           input.checked = true;
           roleNode.querySelector('[data-role-label]').textContent = role;
