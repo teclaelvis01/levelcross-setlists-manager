@@ -1,0 +1,71 @@
+<%
+  const months = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+  const dateParts = String(activity.activity_date || '').split('-');
+  const dayNum = String(Number(dateParts[2] || 0) || '');
+  const monthLabel = months[(Number(dateParts[1]) || 1) - 1] || '';
+  const yearLabel = dateParts[0] || '';
+  const currentYear = String(new Date().getFullYear());
+  const showYear = yearLabel && yearLabel !== currentYear;
+  const people = activity.people || [];
+  const visiblePeople = people.slice(0, maxAvatars);
+  const extraCount = Math.max(0, people.length - maxAvatars);
+  const status = activity.status || 'upcoming';
+  const emphasis = activity.emphasis || (status === 'past' ? 'past' : 'upcoming');
+  const statusLabel = emphasis === 'next'
+    ? (status === 'today' ? 'Hoy' : 'Dentro de poco')
+    : (emphasis === 'upcoming' ? 'Próximamente' : 'Finalizado');
+%>
+
+<div class="activity-timeline__row<%= showDateMarker ? ' is-date-start' : ' is-date-continue' %><%= isLast ? ' is-last' : '' %>">
+  <div class="activity-timeline__date" aria-hidden="<%= showDateMarker ? 'false' : 'true' %>">
+    <% if (showDateMarker) { %>
+      <span class="activity-timeline__day"><%= dayNum %></span>
+      <span class="activity-timeline__month"><%= monthLabel %></span>
+      <% if (showYear) { %>
+        <span class="activity-timeline__year"><%= yearLabel %></span>
+      <% } %>
+    <% } %>
+  </div>
+
+  <div class="activity-timeline__rail" aria-hidden="true">
+    <span class="activity-timeline__dot activity-timeline__dot--<%= emphasis %>"></span>
+    <span class="activity-timeline__line"></span>
+  </div>
+
+  <a
+    href="<%= href %>"
+    class="activity-card activity-card--compact activity-card--link activity-card--<%= emphasis %>"
+  >
+    <div class="activity-card__body">
+      <div class="activity-card__topline">
+        <h3 class="activity-card__title"><%= activity.name %></h3>
+        <span class="activity-card__badge activity-card__badge--<%= emphasis %>"><%= statusLabel %></span>
+      </div>
+      <% if (activity.activity_time) { %>
+        <div class="activity-card__meta">
+          <span><%= activity.activity_time %>h</span>
+        </div>
+      <% } %>
+    </div>
+    <% if (visiblePeople.length > 0) { %>
+      <div class="person-avatar-row person-avatar-row--stack" aria-label="<%= people.length %> participante<%= people.length === 1 ? '' : 's' %>">
+        <% visiblePeople.forEach(person => {
+          const initial = (person.name || 'P').charAt(0).toUpperCase();
+        %>
+          <div class="person-avatar-item" title="<%= person.name %>">
+            <% if (person.photo_url) { %>
+              <img src="<%= photoSrc(person.photo_url) %>" alt="<%= person.name %>" class="person-avatar" referrerpolicy="no-referrer">
+            <% } else { %>
+              <span class="person-avatar person-avatar--fallback"><%= initial %></span>
+            <% } %>
+          </div>
+        <% }) %>
+        <% if (extraCount > 0) { %>
+          <div class="person-avatar-item person-avatar-item--more" title="+<%= extraCount %> más">
+            <span class="person-avatar person-avatar--fallback">+<%= extraCount %></span>
+          </div>
+        <% } %>
+      </div>
+    <% } %>
+  </a>
+</div>

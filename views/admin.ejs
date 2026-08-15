@@ -20,14 +20,26 @@
 <%- include('partials/admin-nav', { adminSection: 'songs' }) %>
 
 <div class="search-bar">
-  <form action="<%= base %>/admin" method="GET">
-    <input type="text" name="search" placeholder="Buscar canción..." value="<%= safeSearch %>">
+  <form
+    data-live-search
+    data-live-search-results="#songs-search-results"
+    action="<%= base %>/admin"
+    method="GET"
+  >
+    <input
+      type="search"
+      data-live-search-input
+      name="search"
+      placeholder="Escribe al menos 3 caracteres para buscar..."
+      value="<%= safeSearch %>"
+      autocomplete="off"
+    >
     <input type="hidden" name="page" value="1">
     <input type="hidden" name="pageSize" value="<%= safePageSize %>">
-    <button type="submit" class="btn">🔍 Buscar</button>
   </form>
 </div>
 
+<div id="songs-search-results" data-live-search-results>
 <% if (safeSongs.length === 0) { %>
   <div class="empty-state">
     <p><%= safeSearch ? 'No hay resultados para esa búsqueda' : 'No hay canciones aún' %></p>
@@ -81,5 +93,7 @@
     </div>
   <% } %>
 <% } %>
+</div>
 
+<script src="<%= base %>/live-search.js"></script>
 <%- include('partials/foot') %>

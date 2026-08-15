@@ -298,14 +298,65 @@ function getActivityPeoplePreview(activityId: number) {
   `).all(activityId) as Array<{ id: number; name: string; photo_url: string }>;
 }
 
+function parseActivityDateTime(activityDate: string, activityTime?: string | null): Date {
+  const [year, month, day] = String(activityDate || '').split('-').map(Number);
+  const rawTime = String(activityTime || '').trim();
+  const [hours, minutes] = (rawTime || '23:59').split(':').map(Number);
+  return new Date(
+    year || 1970,
+    (month || 1) - 1,
+    day || 1,
+    Number.isFinite(hours) ? hours : 23,
+    Number.isFinite(minutes) ? minutes : 59,
+    0,
+    0
+  );
+}
+
+function getActivityStatus(activityDate: string, activityTime?: string | null): 'past' | 'today' | 'upcoming' {
+  const when = parseActivityDateTime(activityDate, activityTime);
+  const now = new Date();
+  if (when.getTime() < now.getTime()) return 'past';
+
+  const isSameDay =
+    when.getFullYear() === now.getFullYear()
+    && when.getMonth() === now.getMonth()
+    && when.getDate() === now.getDate();
+
+  return isSameDay ? 'today' : 'upcoming';
+}
+
 function listActivitiesWithPeople() {
-  return (db.prepare(`
+  const activities = (db.prepare(`
     SELECT * FROM activities
     ORDER BY activity_date DESC, COALESCE(NULLIF(activity_time, ''), '00:00') DESC, name ASC
   `).all() as any[]).map((activity) => ({
     ...activity,
     people: getActivityPeoplePreview(activity.id),
+    status: getActivityStatus(activity.activity_date, activity.activity_time),
   }));
+
+  const sorted = activities.sort((a, b) => {
+    const rank = (status: string) => (status === 'past' ? 1 : 0);
+    if (rank(a.status) !== rank(b.status)) return rank(a.status) - rank(b.status);
+
+    const aKey = `${a.activity_date}T${a.activity_time || '00:00'}`;
+    const bKey = `${b.activity_date}T${b.activity_time || '00:00'}`;
+    if (a.status === 'past') return bKey.localeCompare(aKey);
+    return aKey.localeCompare(bKey);
+  });
+
+  let markedNext = false;
+  return sorted.map((activity) => {
+    if (activity.status === 'past') {
+      return { ...activity, emphasis: 'past' as const };
+    }
+    if (!markedNext) {
+      markedNext = true;
+      return { ...activity, emphasis: 'next' as const };
+    }
+    return { ...activity, emphasis: 'upcoming' as const };
+  });
 }
 
 function listMusicalRoles(): MusicalRole[] {
@@ -429,7 +480,8 @@ function getDefaultAdminCredentials(): { username: string; password: string } {
 }
 
 function getPaginatedSongs(search: string, page: number, pageSize?: number) {
-  const normalizedSearch = search.trim();
+  const trimmedSearch = search.trim();
+  const normalizedSearch = trimmedSearch.length >= 3 ? trimmedSearch : '';
   const normalizedPageSize = PAGE_SIZE_OPTIONS.includes(pageSize || 0) ? (pageSize as number) : DEFAULT_SONGS_PER_PAGE;
   const whereClause = normalizedSearch ? 'WHERE title LIKE ? OR artist LIKE ?' : '';
   const countParams = normalizedSearch ? [`%${normalizedSearch}%`, `%${normalizedSearch}%`] : [];
@@ -723,7 +775,8 @@ app.get('/', (req, res) => {
   if (!isSetupComplete()) {
     return res.redirect(url('/setup'));
   }
-  const search = (req.query.search as string) || '';
+  const rawSearch = ((req.query.search as string) || '').trim();
+  const search = rawSearch.length >= 3 ? rawSearch : '';
   const requestedPage = parseInt(req.query.page as string, 10) || 1;
   const requestedPageSize = parseInt(req.query.pageSize as string, 10) || DEFAULT_SONGS_PER_PAGE;
   const { songs, currentPage, totalPages, totalCount, pageSize, hasPrev, hasNext } = getPaginatedSongs(search, requestedPage, requestedPageSize);
@@ -949,7 +1002,8 @@ app.get('/health', (_req, res) => {
 // ── Admin (Private) Routes ──
 
 app.get('/admin', requireAuth, (req, res) => {
-  const search = (req.query.search as string) || '';
+  const rawSearch = ((req.query.search as string) || '').trim();
+  const search = rawSearch.length >= 3 ? rawSearch : '';
   const requestedPage = parseInt(req.query.page as string, 10) || 1;
   const requestedPageSize = parseInt(req.query.pageSize as string, 10) || DEFAULT_SONGS_PER_PAGE;
   const { songs, currentPage, totalPages, totalCount, pageSize, hasPrev, hasNext } = getPaginatedSongs(search, requestedPage, requestedPageSize);
@@ -962,7 +1016,7 @@ app.get('/admin/actividades', requireAuth, (_req, res) => {
 
 app.get('/admin/personas', requireAuth, (req, res) => {
   const search = ((req.query.search as string) || '').trim();
-  const query = search.toLowerCase();
+  const query = search.length >= 3 ? search.toLowerCase() : '';
   const allPeople = listActivePeopleWithRoles();
   const people = allPeople.filter((person) => {
     if (!query) return true;
@@ -970,7 +1024,7 @@ app.get('/admin/personas', requireAuth, (req, res) => {
     const roleMatch = (person.roles || []).some((role: string) => String(role).toLowerCase().includes(query));
     return nameMatch || roleMatch;
   });
-  res.render('admin-people', { people, search, totalCount: allPeople.length });
+  res.render('admin-people', { people, search: query ? search : '', totalCount: allPeople.length });
 });
 
 app.get('/admin/personas/nueva', requireAuth, (_req, res) => {

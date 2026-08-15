@@ -1,7 +1,7 @@
 <%
   const base = typeof baseUrl !== 'undefined' ? baseUrl : '';
   const safeActivities = typeof activities !== 'undefined' ? activities : [];
-  const maxAvatars = 5;
+  const maxAvatars = 4;
 %>
 
 <%- include('partials/head') %>
@@ -24,46 +24,19 @@
     <a href="<%= base %>/admin/actividades/nueva" class="btn btn-primary">+ Crear primera actividad</a>
   </div>
 <% } else { %>
-  <div class="activity-list admin-list">
-    <% safeActivities.forEach(activity => {
-      const people = activity.people || [];
-      const visiblePeople = people.slice(0, maxAvatars);
-      const extraCount = Math.max(0, people.length - maxAvatars);
+  <div class="activity-timeline">
+    <% let previousDate = null;
+      safeActivities.forEach((activity, index) => {
+        const showDateMarker = activity.activity_date !== previousDate;
+        previousDate = activity.activity_date;
     %>
-      <a href="<%= base %>/admin/actividades/<%= activity.id %>/editar" class="activity-card admin-entity-card activity-card--link">
-        <div class="activity-card__body">
-          <h3 class="admin-entity-card__title"><%= activity.name %></h3>
-          <div class="activity-card__meta">
-            <span><%= activity.activity_date %></span>
-            <% if (activity.activity_time) { %>
-              <span>· <%= activity.activity_time %></span>
-            <% } %>
-          </div>
-          <% if (activity.detail) { %>
-            <p class="activity-card__detail"><%= activity.detail.length > 120 ? activity.detail.slice(0, 120) + '...' : activity.detail %></p>
-          <% } %>
-        </div>
-        <% if (visiblePeople.length > 0) { %>
-          <div class="person-avatar-row person-avatar-row--stack" aria-label="<%= people.length %> participante<%= people.length === 1 ? '' : 's' %>">
-            <% visiblePeople.forEach(person => {
-              const initial = (person.name || 'P').charAt(0).toUpperCase();
-            %>
-              <div class="person-avatar-item" title="<%= person.name %>">
-                <% if (person.photo_url) { %>
-                  <img src="<%= photoSrc(person.photo_url) %>" alt="<%= person.name %>" class="person-avatar" referrerpolicy="no-referrer">
-                <% } else { %>
-                  <span class="person-avatar person-avatar--fallback"><%= initial %></span>
-                <% } %>
-              </div>
-            <% }) %>
-            <% if (extraCount > 0) { %>
-              <div class="person-avatar-item person-avatar-item--more" title="+<%= extraCount %> más">
-                <span class="person-avatar person-avatar--fallback">+<%= extraCount %></span>
-              </div>
-            <% } %>
-          </div>
-        <% } %>
-      </a>
+      <%- include('partials/activity-timeline-item', {
+        activity,
+        href: base + '/admin/actividades/' + activity.id + '/editar',
+        maxAvatars,
+        showDateMarker,
+        isLast: index === safeActivities.length - 1
+      }) %>
     <% }) %>
   </div>
 <% } %>

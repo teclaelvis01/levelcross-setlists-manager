@@ -19,12 +19,24 @@
 <%- include('partials/admin-nav', { adminSection: 'people' }) %>
 
 <div class="search-bar">
-  <form action="<%= base %>/admin/personas" method="GET">
-    <input type="text" name="search" placeholder="Buscar por nombre o rol..." value="<%= safeSearch %>" autofocus>
-    <button type="submit" class="btn">🔍 Buscar</button>
+  <form
+    data-live-search
+    data-live-search-results="#people-search-results"
+    action="<%= base %>/admin/personas"
+    method="GET"
+  >
+    <input
+      type="search"
+      data-live-search-input
+      name="search"
+      placeholder="Escribe al menos 3 caracteres para buscar..."
+      value="<%= safeSearch %>"
+      autocomplete="off"
+    >
   </form>
 </div>
 
+<div id="people-search-results" data-live-search-results>
 <% if (!people || people.length === 0) { %>
   <div class="empty-state">
     <p><%= safeSearch ? 'No hay resultados para esa búsqueda' : 'No hay personas creadas aún' %></p>
@@ -65,5 +77,7 @@
     <% }) %>
   </div>
 <% } %>
+</div>
 
+<script src="<%= base %>/live-search.js"></script>
 <%- include('partials/foot') %>
