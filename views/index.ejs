@@ -8,8 +8,8 @@
 
 <div class="page-header">
   <div>
-    <h1>Canciones</h1>
-    <p class="page-subtitle">Biblioteca de canciones disponibles</p>
+    <h1>Librería</h1>
+    <p class="page-subtitle">Recursos de canciones disponibles</p>
   </div>
 </div>
 
@@ -19,7 +19,7 @@
   <form
     data-live-search
     data-live-search-results="#songs-search-results"
-    action="<%= base %>/"
+    action="<%= base %>/libreria"
     method="GET"
   >
     <input
@@ -71,14 +71,14 @@
 
   <% if (typeof totalPages !== 'undefined' && totalPages > 1) { %>
     <div class="pagination">
-      <a href="<%= base %>/?search=<%= encodeURIComponent(search) %>&page=<%= currentPage - 1 %>&pageSize=<%= pageSize %>" class="btn btn-secondary <%= hasPrev ? '' : 'is-disabled' %>">← Anterior</a>
+      <a href="<%= base %>/libreria?search=<%= encodeURIComponent(search) %>&page=<%= currentPage - 1 %>&pageSize=<%= pageSize %>" class="btn btn-secondary <%= hasPrev ? '' : 'is-disabled' %>">← Anterior</a>
       <div class="pagination__pages">
         <% for (let pageNumber = Math.max(1, currentPage - 1); pageNumber <= Math.min(totalPages, currentPage + 1); pageNumber++) { %>
-          <a href="<%= base %>/?search=<%= encodeURIComponent(search) %>&page=<%= pageNumber %>&pageSize=<%= pageSize %>" class="pagination__page <%= pageNumber === currentPage ? 'is-active' : '' %>"><%= pageNumber %></a>
+          <a href="<%= base %>/libreria?search=<%= encodeURIComponent(search) %>&page=<%= pageNumber %>&pageSize=<%= pageSize %>" class="pagination__page <%= pageNumber === currentPage ? 'is-active' : '' %>"><%= pageNumber %></a>
         <% } %>
       </div>
-      <a href="<%= base %>/?search=<%= encodeURIComponent(search) %>&page=<%= currentPage + 1 %>&pageSize=<%= pageSize %>" class="btn btn-secondary <%= hasNext ? '' : 'is-disabled' %>">Siguiente →</a>
-      <select class="page-size-select" onchange="window.location.href='<%= base %>/?search=<%= encodeURIComponent(search) %>&page=1&pageSize=' + this.value">
+      <a href="<%= base %>/libreria?search=<%= encodeURIComponent(search) %>&page=<%= currentPage + 1 %>&pageSize=<%= pageSize %>" class="btn btn-secondary <%= hasNext ? '' : 'is-disabled' %>">Siguiente →</a>
+      <select class="page-size-select" onchange="window.location.href='<%= base %>/libreria?search=<%= encodeURIComponent(search) %>&page=1&pageSize=' + this.value">
         <option value="5" <%= pageSize === 5 ? 'selected' : '' %>>5 por página</option>
         <option value="10" <%= pageSize === 10 ? 'selected' : '' %>>10 por página</option>
         <option value="50" <%= pageSize === 50 ? 'selected' : '' %>>50 por página</option>

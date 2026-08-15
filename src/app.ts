@@ -822,6 +822,23 @@ app.get('/', (req, res) => {
   if (!isSetupComplete()) {
     return res.redirect(url('/setup'));
   }
+  // Preserve old song-library query bookmarks at the root URL.
+  if (req.query.search || req.query.page || req.query.pageSize) {
+    const params = new URLSearchParams();
+    for (const key of ['search', 'page', 'pageSize'] as const) {
+      const value = req.query[key];
+      if (typeof value === 'string' && value) params.set(key, value);
+    }
+    const qs = params.toString();
+    return res.redirect(url(`/libreria${qs ? `?${qs}` : ''}`));
+  }
+  return res.redirect(url('/actividades'));
+});
+
+app.get('/libreria', (req, res) => {
+  if (!isSetupComplete()) {
+    return res.redirect(url('/setup'));
+  }
   const rawSearch = ((req.query.search as string) || '').trim();
   const search = rawSearch.length >= 3 ? rawSearch : '';
   const requestedPage = parseInt(req.query.page as string, 10) || 1;
@@ -836,7 +853,7 @@ app.get('/songs/:slug', (req, res) => {
   }
   const song = db.prepare('SELECT * FROM songs WHERE slug = ?').get(req.params.slug) as Song | undefined;
   if (!song) {
-    return flashRedirect(req, res, '/', 'error', 'Canción no encontrada');
+    return flashRedirect(req, res, '/libreria', 'error', 'Canción no encontrada');
   }
 
   const rawFrom = typeof req.query.from === 'string' ? req.query.from : '';
@@ -1097,7 +1114,7 @@ app.post('/admin/personas', requireAuth, handlePersonPhotoUpload, (req, res) => 
   for (const role of roles) {
     db.prepare('INSERT INTO person_roles (person_id, role) VALUES (?, ?)').run(personId, role);
   }
-  return flashRedirect(req, res, '/admin/personas', 'success', 'Persona creada correctamente');
+  return flashRedirect(req, res, `/admin/personas/${personId}/editar`, 'success', 'Persona creada correctamente');
 });
 
 app.get('/admin/personas/:id/editar', requireAuth, (req, res) => {
@@ -1132,7 +1149,7 @@ app.post('/admin/personas/:id', requireAuth, handlePersonPhotoUpload, (req, res)
   for (const role of roles) {
     db.prepare('INSERT INTO person_roles (person_id, role) VALUES (?, ?)').run(person.id, role);
   }
-  return flashRedirect(req, res, '/admin/personas', 'success', 'Persona actualizada correctamente');
+  return flashRedirect(req, res, `/admin/personas/${person.id}/editar`, 'success', 'Persona actualizada correctamente');
 });
 
 app.post('/admin/personas/:id/delete', requireAuth, (req, res) => {
@@ -1164,8 +1181,9 @@ app.post('/admin/ajustes/roles', requireAuth, (req, res) => {
     showFormError(res, 'Ya existe un rol con ese nombre');
     return res.status(400).render('admin-role-form', { role: { name }, fieldErrors: { name: true } });
   }
-  db.prepare('INSERT INTO musical_roles (name, position) VALUES (?, ?)').run(name, nextMusicalRolePosition());
-  return flashRedirect(req, res, '/admin/ajustes', 'success', 'Rol creado correctamente');
+  const insert = db.prepare('INSERT INTO musical_roles (name, position) VALUES (?, ?)').run(name, nextMusicalRolePosition());
+  const roleId = Number(insert.lastInsertRowid);
+  return flashRedirect(req, res, `/admin/ajustes/roles/${roleId}/editar`, 'success', 'Rol creado correctamente');
 });
 
 app.get('/admin/ajustes/roles/:id/editar', requireAuth, (req, res) => {
@@ -1194,7 +1212,7 @@ app.post('/admin/ajustes/roles/:id', requireAuth, (req, res) => {
 
   db.prepare('UPDATE musical_roles SET name = ? WHERE id = ?').run(name, role.id);
   renameRoleEverywhere(role.name, name);
-  return flashRedirect(req, res, '/admin/ajustes', 'success', 'Rol actualizado correctamente');
+  return flashRedirect(req, res, `/admin/ajustes/roles/${role.id}/editar`, 'success', 'Rol actualizado correctamente');
 });
 
 app.post('/admin/ajustes/roles/:id/delete', requireAuth, (req, res) => {
@@ -1263,7 +1281,7 @@ app.post('/admin/actividades', requireAuth, (req, res) => {
     saveActivityPeople(activityId, selectedPeople, rolesByPerson);
     saveActivitySongs(activityId, req);
 
-    return flashRedirect(req, res, '/admin/actividades', 'success', 'Actividad creada correctamente');
+    return flashRedirect(req, res, `/admin/actividades/${activityId}/editar`, 'success', 'Actividad creada correctamente');
   } catch (error) {
     console.error(error);
     return flashRedirect(req, res, '/admin/actividades/nueva', 'error', 'No se pudo crear la actividad. Revisa los datos e inténtalo de nuevo.');
@@ -1310,7 +1328,7 @@ app.post('/admin/actividades/:id', requireAuth, (req, res) => {
     saveActivityPeople(existing.id, selectedPeople, rolesByPerson);
     saveActivitySongs(existing.id, req);
 
-    return flashRedirect(req, res, '/admin/actividades', 'success', 'Actividad actualizada correctamente');
+    return flashRedirect(req, res, `/admin/actividades/${existing.id}/editar`, 'success', 'Actividad actualizada correctamente');
   } catch (error) {
     console.error(error);
     return flashRedirect(
@@ -1368,7 +1386,7 @@ app.post('/admin/songs', requireAuth, (req, res) => {
   db.prepare(
     'INSERT INTO songs (title, slug, artist, lyrics, audio_url) VALUES (?, ?, ?, ?, ?)'
   ).run(cleanTitle, slug, (artist || '').trim(), lyrics || '', (audio_url || '').trim());
-  return flashRedirect(req, res, '/admin', 'success', 'Canción creada correctamente');
+  return flashRedirect(req, res, `/admin/songs/${slug}/edit`, 'success', 'Canción creada correctamente');
 });
 
 app.get('/admin/songs/:slug/edit', requireAuth, (req, res) => {
@@ -1407,7 +1425,7 @@ app.post('/admin/songs/:slug', requireAuth, (req, res) => {
   db.prepare(
     'UPDATE songs SET title = ?, slug = ?, artist = ?, lyrics = ?, audio_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?'
   ).run(cleanTitle, slug, (artist || '').trim(), lyrics || '', (audio_url || '').trim(), existing.id);
-  return flashRedirect(req, res, '/admin', 'success', 'Canción actualizada correctamente');
+  return flashRedirect(req, res, `/admin/songs/${slug}/edit`, 'success', 'Canción actualizada correctamente');
 });
 
 app.post('/admin/songs/:slug/delete', requireAuth, (req, res) => {
