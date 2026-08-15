@@ -1,5 +1,7 @@
 <%
   const base = typeof baseUrl !== 'undefined' ? baseUrl : '';
+  const safeSearch = typeof search !== 'undefined' ? search : '';
+  const safeTotalCount = typeof totalCount !== 'undefined' ? totalCount : (people ? people.length : 0);
 %>
 
 <%- include('partials/head') %>
@@ -16,12 +18,31 @@
 
 <%- include('partials/admin-nav', { adminSection: 'people' }) %>
 
+<div class="search-bar">
+  <form action="<%= base %>/admin/personas" method="GET">
+    <input type="text" name="search" placeholder="Buscar por nombre o rol..." value="<%= safeSearch %>" autofocus>
+    <button type="submit" class="btn">🔍 Buscar</button>
+  </form>
+</div>
+
 <% if (!people || people.length === 0) { %>
   <div class="empty-state">
-    <p>No hay personas creadas aún</p>
-    <a href="<%= base %>/admin/personas/nueva" class="btn btn-primary">+ Crear primera persona</a>
+    <p><%= safeSearch ? 'No hay resultados para esa búsqueda' : 'No hay personas creadas aún' %></p>
+    <% if (!safeSearch) { %>
+      <a href="<%= base %>/admin/personas/nueva" class="btn btn-primary">+ Crear primera persona</a>
+    <% } %>
   </div>
 <% } else { %>
+  <div class="results-meta">
+    <p>
+      <% if (safeSearch) { %>
+        Mostrando <%= people.length %> de <%= safeTotalCount %> persona<%= safeTotalCount === 1 ? '' : 's' %>
+      <% } else { %>
+        <%= safeTotalCount %> persona<%= safeTotalCount === 1 ? '' : 's' %>
+      <% } %>
+    </p>
+  </div>
+
   <div class="person-list admin-list">
     <% people.forEach(personItem => { %>
       <a href="<%= base %>/admin/personas/<%= personItem.id %>/editar" class="person-card admin-entity-card person-card--link">

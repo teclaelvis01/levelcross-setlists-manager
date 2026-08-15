@@ -873,9 +873,17 @@ app.get('/admin/actividades', requireAuth, (_req, res) => {
   res.render('admin-activities', { activities });
 });
 
-app.get('/admin/personas', requireAuth, (_req, res) => {
-  const people = listActivePeopleWithRoles();
-  res.render('admin-people', { people });
+app.get('/admin/personas', requireAuth, (req, res) => {
+  const search = ((req.query.search as string) || '').trim();
+  const query = search.toLowerCase();
+  const allPeople = listActivePeopleWithRoles();
+  const people = allPeople.filter((person) => {
+    if (!query) return true;
+    const nameMatch = String(person.name || '').toLowerCase().includes(query);
+    const roleMatch = (person.roles || []).some((role: string) => String(role).toLowerCase().includes(query));
+    return nameMatch || roleMatch;
+  });
+  res.render('admin-people', { people, search, totalCount: allPeople.length });
 });
 
 app.get('/admin/personas/nueva', requireAuth, (_req, res) => {
