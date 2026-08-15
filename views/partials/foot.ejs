@@ -4,8 +4,22 @@
   </footer>
 
   <% if (typeof flash !== 'undefined' && flash && flash.message) { %>
-    <div class="app-toast app-toast--<%= flash.type || 'info' %>" data-app-toast role="alert" aria-live="assertive">
-      <p class="app-toast__message"><%= flash.message %></p>
+    <div
+      class="app-toast app-toast--<%= flash.type || 'info' %><%= flash.sticky ? ' app-toast--sticky' : '' %>"
+      data-app-toast
+      data-toast-sticky="<%= flash.sticky ? '1' : '0' %>"
+      role="alert"
+      aria-live="assertive"
+    >
+      <div class="app-toast__icon" aria-hidden="true">
+        <%= flash.type === 'success' ? '✓' : (flash.type === 'error' ? '!' : 'i') %>
+      </div>
+      <div class="app-toast__body">
+        <% if (flash.title) { %>
+          <strong class="app-toast__title"><%= flash.title %></strong>
+        <% } %>
+        <p class="app-toast__message"><%= flash.message %></p>
+      </div>
       <button type="button" class="app-toast__close" data-app-toast-close aria-label="Cerrar">×</button>
     </div>
   <% } %>
@@ -20,7 +34,7 @@
         }, 180);
       }
 
-      document.querySelectorAll('[data-app-toast]').forEach(function (toast) {
+      function bindToast(toast) {
         var closeBtn = toast.querySelector('[data-app-toast-close]');
         if (closeBtn) {
           closeBtn.addEventListener('click', function () {
@@ -28,35 +42,47 @@
           });
         }
 
-        if (toast.classList.contains('app-toast--success') || toast.classList.contains('app-toast--info')) {
+        var sticky = toast.getAttribute('data-toast-sticky') === '1' || toast.classList.contains('app-toast--sticky');
+        if (sticky) return;
+
+        var delay = toast.classList.contains('app-toast--error') ? 0 : 7000;
+        if (delay > 0) {
           window.setTimeout(function () {
             closeToast(toast);
-          }, 5000);
+          }, delay);
         }
-      });
+      }
 
-      window.showAppToast = function (message, type) {
+      document.querySelectorAll('[data-app-toast]').forEach(bindToast);
+
+      window.showAppToast = function (message, type, options) {
+        options = options || {};
         var existing = document.querySelector('[data-app-toast]');
         if (existing) existing.remove();
 
         var toast = document.createElement('div');
-        toast.className = 'app-toast app-toast--' + (type || 'info');
+        var sticky = !!options.sticky;
+        toast.className = 'app-toast app-toast--' + (type || 'info') + (sticky ? ' app-toast--sticky' : '');
         toast.setAttribute('data-app-toast', '');
+        toast.setAttribute('data-toast-sticky', sticky ? '1' : '0');
         toast.setAttribute('role', 'alert');
         toast.setAttribute('aria-live', 'assertive');
+
+        var icon = type === 'success' ? '✓' : (type === 'error' ? '!' : 'i');
         toast.innerHTML =
-          '<p class="app-toast__message"></p>' +
+          '<div class="app-toast__icon" aria-hidden="true">' + icon + '</div>' +
+          '<div class="app-toast__body">' +
+            (options.title ? '<strong class="app-toast__title"></strong>' : '') +
+            '<p class="app-toast__message"></p>' +
+          '</div>' +
           '<button type="button" class="app-toast__close" data-app-toast-close aria-label="Cerrar">×</button>';
+
+        if (options.title) {
+          toast.querySelector('.app-toast__title').textContent = options.title;
+        }
         toast.querySelector('.app-toast__message').textContent = message;
         document.body.appendChild(toast);
-        toast.querySelector('[data-app-toast-close]').addEventListener('click', function () {
-          closeToast(toast);
-        });
-        if (type === 'success' || type === 'info') {
-          window.setTimeout(function () {
-            closeToast(toast);
-          }, 5000);
-        }
+        bindToast(toast);
       };
     })();
   </script>

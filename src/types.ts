@@ -68,6 +68,8 @@ declare module 'express-session' {
     flash?: {
       type: 'error' | 'success' | 'info';
       message: string;
+      title?: string;
+      sticky?: boolean;
     };
   }
 }

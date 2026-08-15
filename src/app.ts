@@ -478,9 +478,19 @@ function url(pathName: string): string {
   return BASE_URL + pathName;
 }
 
-function setFlash(req: express.Request, type: 'error' | 'success' | 'info', message: string) {
+function setFlash(
+  req: express.Request,
+  type: 'error' | 'success' | 'info',
+  message: string,
+  extras: { title?: string; sticky?: boolean } = {}
+) {
   if (req.session) {
-    req.session.flash = { type, message };
+    req.session.flash = {
+      type,
+      message,
+      ...(extras.title ? { title: extras.title } : {}),
+      ...(extras.sticky ? { sticky: true } : {}),
+    };
   }
 }
 
@@ -489,9 +499,10 @@ function flashRedirect(
   res: express.Response,
   pathName: string,
   type: 'error' | 'success' | 'info',
-  message: string
+  message: string,
+  extras: { title?: string; sticky?: boolean } = {}
 ) {
-  setFlash(req, type, message);
+  setFlash(req, type, message, extras);
   return res.redirect(url(pathName));
 }
 
@@ -1328,7 +1339,10 @@ app.get('/admin/export', requireAuth, (_req, res) => {
 
 app.post('/admin/import', requireAuth, backupUpload.single('database'), (req, res) => {
   if (!req.file) {
-    return flashRedirect(req, res, '/admin/ajustes', 'error', 'No se seleccionó ningún archivo');
+    return flashRedirect(req, res, '/admin/ajustes', 'error', 'Selecciona un archivo .db, .sqlite o .sqlite3 para continuar.', {
+      title: 'No se importó la base de datos',
+      sticky: true,
+    });
   }
   const dbPath = path.join(dataRoot, 'setlists.db');
   const uploadedPath = req.file.path;
@@ -1336,11 +1350,17 @@ app.post('/admin/import', requireAuth, backupUpload.single('database'), (req, re
   const ext = path.extname(req.file.originalname).toLowerCase();
   if (!validExts.includes(ext)) {
     fs.unlinkSync(uploadedPath);
-    return flashRedirect(req, res, '/admin/ajustes', 'error', 'El archivo debe tener extensión .db, .sqlite o .sqlite3');
+    return flashRedirect(req, res, '/admin/ajustes', 'error', 'El archivo debe tener extensión .db, .sqlite o .sqlite3.', {
+      title: 'Archivo no válido',
+      sticky: true,
+    });
   }
   if (req.file.size > 50 * 1024 * 1024) {
     fs.unlinkSync(uploadedPath);
-    return flashRedirect(req, res, '/admin/ajustes', 'error', 'El archivo es demasiado grande (máximo 50MB)');
+    return flashRedirect(req, res, '/admin/ajustes', 'error', 'El archivo supera el límite de 50 MB.', {
+      title: 'Archivo demasiado grande',
+      sticky: true,
+    });
   }
   try {
     const testDb = require('better-sqlite3')(uploadedPath);
@@ -1349,7 +1369,10 @@ app.post('/admin/import', requireAuth, backupUpload.single('database'), (req, re
     if (tables.length < 2) {
       testDb.close();
       fs.unlinkSync(uploadedPath);
-      return flashRedirect(req, res, '/admin/ajustes', 'error', 'El archivo no es una base de datos válida (debe contener las tablas songs y users)');
+      return flashRedirect(req, res, '/admin/ajustes', 'error', 'El archivo no contiene las tablas songs y users.', {
+        title: 'Base de datos no válida',
+        sticky: true,
+      });
     }
     testDb.close();
     db.close();
@@ -1358,19 +1381,36 @@ app.post('/admin/import', requireAuth, backupUpload.single('database'), (req, re
     try { fs.unlinkSync(dbPath + '-shm'); } catch {}
     fs.unlinkSync(uploadedPath);
     db = openDatabase();
-    return flashRedirect(req, res, '/admin/ajustes', 'success', 'Base de datos importada correctamente. Reinicia el servidor para que los cambios surtan efecto completo.');
+    return flashRedirect(
+      req,
+      res,
+      '/admin/ajustes',
+      'success',
+      'La copia se restauró correctamente. Si algún dato no aparece al momento, reinicia el servidor.',
+      { title: 'Base de datos importada', sticky: true }
+    );
   } catch (err) {
     try { fs.unlinkSync(uploadedPath); } catch {}
     try {
       db = openDatabase();
     } catch {}
-    return flashRedirect(req, res, '/admin/ajustes', 'error', 'Error al importar: ' + ((err as Error).message || 'desconocido'));
+    return flashRedirect(
+      req,
+      res,
+      '/admin/ajustes',
+      'error',
+      ((err as Error).message || 'Error desconocido'),
+      { title: 'Error al importar la base de datos', sticky: true }
+    );
   }
 });
 
 app.get('/admin/ajustes/multimedia/export', requireAuth, (req, res) => {
   if (countMultimediaFiles() === 0) {
-    return flashRedirect(req, res, '/admin/ajustes', 'error', 'No hay archivos multimedia para exportar');
+    return flashRedirect(req, res, '/admin/ajustes', 'error', 'No hay fotos ni archivos para exportar todavía.', {
+      title: 'Multimedia vacía',
+      sticky: true,
+    });
   }
 
   try {
@@ -1383,38 +1423,62 @@ app.get('/admin/ajustes/multimedia/export', requireAuth, (req, res) => {
     res.setHeader('Content-Length', String(buffer.length));
     return res.send(buffer);
   } catch (err) {
-    return flashRedirect(req, res, '/admin/ajustes', 'error', 'Error al exportar multimedia: ' + ((err as Error).message || 'desconocido'));
+    return flashRedirect(
+      req,
+      res,
+      '/admin/ajustes',
+      'error',
+      ((err as Error).message || 'Error desconocido'),
+      { title: 'Error al exportar multimedia', sticky: true }
+    );
   }
 });
 
 app.post('/admin/ajustes/multimedia/import', requireAuth, backupUpload.single('multimedia'), (req, res) => {
   if (!req.file) {
-    return flashRedirect(req, res, '/admin/ajustes', 'error', 'No se seleccionó ningún archivo');
+    return flashRedirect(req, res, '/admin/ajustes', 'error', 'Selecciona un archivo ZIP para continuar.', {
+      title: 'No se importó la multimedia',
+      sticky: true,
+    });
   }
 
   const uploadedPath = req.file.path;
   const ext = path.extname(req.file.originalname).toLowerCase();
   if (ext !== '.zip') {
     try { fs.unlinkSync(uploadedPath); } catch {}
-    return flashRedirect(req, res, '/admin/ajustes', 'error', 'El archivo debe ser un ZIP (.zip)');
+    return flashRedirect(req, res, '/admin/ajustes', 'error', 'El archivo debe ser un ZIP (.zip).', {
+      title: 'Archivo no válido',
+      sticky: true,
+    });
   }
 
   try {
     const imported = importMultimediaZip(uploadedPath);
     try { fs.unlinkSync(uploadedPath); } catch {}
     if (imported === 0) {
-      return flashRedirect(req, res, '/admin/ajustes', 'error', 'No se encontraron imágenes válidas en el ZIP');
+      return flashRedirect(req, res, '/admin/ajustes', 'error', 'El ZIP no contenía imágenes JPG, PNG, WebP o GIF válidas.', {
+        title: 'Sin archivos importados',
+        sticky: true,
+      });
     }
     return flashRedirect(
       req,
       res,
       '/admin/ajustes',
       'success',
-      `Multimedia importada correctamente (${imported} archivo${imported === 1 ? '' : 's'})`
+      `Se restauraron ${imported} archivo${imported === 1 ? '' : 's'} en la carpeta de multimedia.`,
+      { title: 'Multimedia importada', sticky: true }
     );
   } catch (err) {
     try { fs.unlinkSync(uploadedPath); } catch {}
-    return flashRedirect(req, res, '/admin/ajustes', 'error', 'Error al importar multimedia: ' + ((err as Error).message || 'desconocido'));
+    return flashRedirect(
+      req,
+      res,
+      '/admin/ajustes',
+      'error',
+      ((err as Error).message || 'Error desconocido'),
+      { title: 'Error al importar multimedia', sticky: true }
+    );
   }
 });
 

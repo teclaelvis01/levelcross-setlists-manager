@@ -2175,6 +2175,132 @@ footer {
   cursor: pointer;
 }
 
+.settings-flash {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 14px 16px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+}
+
+.settings-flash__icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-weight: 800;
+  font-size: 0.9rem;
+}
+
+.settings-flash__body {
+  min-width: 0;
+  flex: 1;
+}
+
+.settings-flash__body strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 0.95rem;
+}
+
+.settings-flash__body p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  line-height: 1.45;
+}
+
+.settings-flash--success {
+  border-color: rgba(34, 197, 94, 0.45);
+  background: rgba(34, 197, 94, 0.12);
+}
+
+.settings-flash--success .settings-flash__icon {
+  background: rgba(34, 197, 94, 0.22);
+  color: #86efac;
+}
+
+.settings-flash--success .settings-flash__body strong {
+  color: #bbf7d0;
+}
+
+.settings-flash--error {
+  border-color: rgba(239, 68, 68, 0.45);
+  background: rgba(239, 68, 68, 0.12);
+}
+
+.settings-flash--error .settings-flash__icon {
+  background: rgba(239, 68, 68, 0.22);
+  color: #fecaca;
+}
+
+.settings-flash--error .settings-flash__body strong {
+  color: #fecaca;
+}
+
+.settings-flash--info {
+  border-color: rgba(99, 102, 241, 0.45);
+  background: rgba(99, 102, 241, 0.12);
+}
+
+.backup-busy[hidden] {
+  display: none !important;
+}
+
+.backup-busy {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(2px);
+}
+
+.backup-busy__card {
+  width: min(360px, 100%);
+  padding: 24px 20px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  text-align: center;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
+}
+
+.backup-busy__spinner {
+  width: 34px;
+  height: 34px;
+  margin: 0 auto 14px;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 255, 255, 0.12);
+  border-top-color: var(--primary);
+  animation: backup-spin 0.8s linear infinite;
+}
+
+.backup-busy__card strong {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 1rem;
+}
+
+.backup-busy__card p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
+@keyframes backup-spin {
+  to { transform: rotate(360deg); }
+}
+
 .alert-success {
   background: rgba(34, 197, 94, 0.15);
   color: #22c55e;
@@ -2189,13 +2315,18 @@ footer {
   display: flex;
   align-items: flex-start;
   gap: 12px;
-  width: min(420px, calc(100vw - 24px));
+  width: min(440px, calc(100vw - 24px));
   padding: 14px 14px 14px 16px;
   border-radius: var(--radius);
   border: 1px solid var(--border);
   background: var(--bg-card);
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
-  animation: app-toast-in 0.2s ease;
+  animation: app-toast-in 0.22s ease;
+}
+
+.app-toast--sticky {
+  top: 72px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55);
 }
 
 .app-toast.is-leaving {
@@ -2204,9 +2335,35 @@ footer {
   transition: opacity 0.18s ease, transform 0.18s ease;
 }
 
+.app-toast__icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-weight: 800;
+  font-size: 0.9rem;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+}
+
+.app-toast__body {
+  min-width: 0;
+  flex: 1;
+}
+
+.app-toast__title {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
 .app-toast__message {
   margin: 0;
-  flex: 1;
   font-size: 0.875rem;
   line-height: 1.45;
   color: var(--text);
@@ -2235,17 +2392,32 @@ footer {
   background: rgba(40, 16, 16, 0.96);
 }
 
+.app-toast--error .app-toast__icon {
+  background: rgba(239, 68, 68, 0.22);
+  color: #fecaca;
+}
+
+.app-toast--error .app-toast__title,
 .app-toast--error .app-toast__message {
   color: #fecaca;
 }
 
 .app-toast--success {
-  border-color: rgba(34, 197, 94, 0.45);
-  background: rgba(14, 32, 22, 0.96);
+  border-color: rgba(34, 197, 94, 0.55);
+  background: rgba(14, 32, 22, 0.98);
+}
+
+.app-toast--success .app-toast__icon {
+  background: rgba(34, 197, 94, 0.22);
+  color: #86efac;
+}
+
+.app-toast--success .app-toast__title {
+  color: #bbf7d0;
 }
 
 .app-toast--success .app-toast__message {
-  color: #bbf7d0;
+  color: #dcfce7;
 }
 
 .app-toast--info {

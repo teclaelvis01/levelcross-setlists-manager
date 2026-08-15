@@ -3,6 +3,7 @@
   const safeRoles = typeof roles !== 'undefined' ? roles : [];
   const mediaCount = typeof multimediaCount !== 'undefined' ? multimediaCount : 0;
   const rolesOpen = safeRoles.length === 0;
+  const pageFlash = typeof flash !== 'undefined' && flash ? flash : null;
 %>
 
 <%- include('partials/head') %>
@@ -15,6 +16,20 @@
 </div>
 
 <%- include('partials/admin-nav', { adminSection: 'settings' }) %>
+
+<% if (pageFlash && pageFlash.message) { %>
+  <div class="settings-flash settings-flash--<%= pageFlash.type || 'info' %>" role="status">
+    <div class="settings-flash__icon" aria-hidden="true">
+      <%= pageFlash.type === 'success' ? '✓' : (pageFlash.type === 'error' ? '!' : 'i') %>
+    </div>
+    <div class="settings-flash__body">
+      <% if (pageFlash.title) { %>
+        <strong><%= pageFlash.title %></strong>
+      <% } %>
+      <p><%= pageFlash.message %></p>
+    </div>
+  </div>
+<% } %>
 
 <details class="settings-panel"<%= rolesOpen ? ' open' : '' %>>
   <summary class="settings-panel__summary">
@@ -49,10 +64,10 @@
   <p class="help-text">Exporta o importa la base de datos SQLite completa (canciones, personas, actividades y usuarios).</p>
   <div class="backup-actions">
     <a href="<%= base %>/admin/export" class="btn btn-primary">⬇️ Exportar DB</a>
-    <form action="<%= base %>/admin/import" method="POST" enctype="multipart/form-data" class="inline-form">
-      <label class="btn btn-secondary import-label">
+    <form action="<%= base %>/admin/import" method="POST" enctype="multipart/form-data" class="inline-form" data-backup-import data-backup-label="Importando base de datos…">
+      <label class="btn btn-secondary import-label" data-import-label>
         📤 Importar DB
-        <input type="file" name="database" accept=".db,.sqlite,.sqlite3" required hidden onchange="this.form.submit()">
+        <input type="file" name="database" accept=".db,.sqlite,.sqlite3" required hidden data-backup-file>
       </label>
     </form>
   </div>
@@ -70,13 +85,42 @@
   </p>
   <div class="backup-actions">
     <a href="<%= base %>/admin/ajustes/multimedia/export" class="btn btn-primary<%= mediaCount === 0 ? ' is-disabled' : '' %>"<%= mediaCount === 0 ? ' aria-disabled="true" tabindex="-1"' : '' %>>⬇️ Exportar multimedia</a>
-    <form action="<%= base %>/admin/ajustes/multimedia/import" method="POST" enctype="multipart/form-data" class="inline-form">
-      <label class="btn btn-secondary import-label">
+    <form action="<%= base %>/admin/ajustes/multimedia/import" method="POST" enctype="multipart/form-data" class="inline-form" data-backup-import data-backup-label="Importando multimedia…">
+      <label class="btn btn-secondary import-label" data-import-label>
         📤 Importar multimedia
-        <input type="file" name="multimedia" accept=".zip,application/zip" required hidden onchange="this.form.submit()">
+        <input type="file" name="multimedia" accept=".zip,application/zip" required hidden data-backup-file>
       </label>
     </form>
   </div>
 </section>
+
+<div class="backup-busy" data-backup-busy hidden>
+  <div class="backup-busy__card" role="status" aria-live="polite">
+    <div class="backup-busy__spinner" aria-hidden="true"></div>
+    <strong data-backup-busy-title>Importando…</strong>
+    <p>No cierres esta página hasta que termine.</p>
+  </div>
+</div>
+
+<script>
+  (function () {
+    var busy = document.querySelector('[data-backup-busy]');
+    var busyTitle = document.querySelector('[data-backup-busy-title]');
+
+    document.querySelectorAll('[data-backup-import]').forEach(function (form) {
+      var input = form.querySelector('[data-backup-file]');
+      if (!input) return;
+
+      input.addEventListener('change', function () {
+        if (!input.files || !input.files.length) return;
+        if (busy) {
+          busy.hidden = false;
+          if (busyTitle) busyTitle.textContent = form.getAttribute('data-backup-label') || 'Importando…';
+        }
+        form.requestSubmit();
+      });
+    });
+  })();
+</script>
 
 <%- include('partials/foot') %>
