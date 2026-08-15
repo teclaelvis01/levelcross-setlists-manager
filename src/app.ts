@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import crypto from 'crypto';
 import express from 'express';
 import session from 'express-session';
 import path from 'path';
@@ -23,6 +24,8 @@ const PORT = parseInt(process.env.PORT || '3000', 10);
 const BASE_URL = process.env.BASE_URL || '';
 const isDev = process.env.NODE_ENV !== 'production';
 const SESSION_MAX_AGE_MS = 2 * 60 * 60 * 1000; // 2 hours
+const SETUP_TOKEN_TTL_MS = 15 * 60 * 1000; // 15 minutes
+const setupTokens = new Map<string, number>();
 const DEFAULT_SONGS_PER_PAGE = 12;
 const PAGE_SIZE_OPTIONS = [5, 10, 50];
 const DEFAULT_ROLE_CATEGORIES = ['Músicos', 'Cantantes', 'Sonido', 'Otros'];
@@ -744,18 +747,36 @@ app.locals.renderLyrics = renderLyrics;
 
 // ── Auth middleware ──
 
+function createSetupToken(): string {
+  const now = Date.now();
+  for (const [token, expiresAt] of setupTokens) {
+    if (expiresAt <= now) setupTokens.delete(token);
+  }
+  const token = crypto.randomBytes(24).toString('hex');
+  setupTokens.set(token, now + SETUP_TOKEN_TTL_MS);
+  return token;
+}
+
+function consumeSetupToken(token: string | undefined): boolean {
+  if (!token) return false;
+  const expiresAt = setupTokens.get(token);
+  if (!expiresAt) return false;
+  if (expiresAt <= Date.now()) {
+    setupTokens.delete(token);
+    return false;
+  }
+  // Keep token valid through the setup form POST (same browser flow).
+  return true;
+}
+
+function invalidateSetupToken(token: string | undefined) {
+  if (token) setupTokens.delete(token);
+}
+
 function requireAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
   if (!isSetupComplete()) {
-    if (!req.session) {
-      return res.redirect(url('/'));
-    }
-    req.session.allowAdminSetup = true;
-    return req.session.save((err) => {
-      if (err) {
-        return res.redirect(url('/'));
-      }
-      res.redirect(url('/setup'));
-    });
+    const token = createSetupToken();
+    return res.redirect(url(`/setup?token=${encodeURIComponent(token)}`));
   }
   if (!req.session || !req.session.userId) {
     return res.redirect(url('/login'));
@@ -1145,22 +1166,24 @@ app.get('/setup', (req, res) => {
   if (isSetupComplete()) {
     return res.redirect(url('/login'));
   }
-  if (!req.session?.allowAdminSetup) {
+  const token = typeof req.query.token === 'string' ? req.query.token : '';
+  if (!consumeSetupToken(token)) {
     return res.redirect(url('/'));
   }
-  res.render('setup', { formValues: { email: '' }, fieldErrors: {} });
+  res.render('setup', { formValues: { email: '', token }, fieldErrors: {} });
 });
 
 app.post('/setup', (req, res) => {
   if (isSetupComplete()) {
     return res.redirect(url('/login'));
   }
-  if (!req.session?.allowAdminSetup) {
+  const token = String(req.body.token || '');
+  if (!consumeSetupToken(token)) {
     return res.redirect(url('/'));
   }
 
   const email = normalizeEmail(String(req.body.email || ''));
-  const formValues = { email };
+  const formValues = { email, token };
   if (!email) {
     showFormError(res, 'El correo es obligatorio');
     return res.status(400).render('setup', {
@@ -1178,10 +1201,10 @@ app.post('/setup', (req, res) => {
 
   try {
     db.prepare('INSERT INTO users (email, google_sub, name) VALUES (?, NULL, ?)').run(email, '');
-    delete req.session.allowAdminSetup;
+    invalidateSetupToken(token);
     return flashRedirect(req, res, '/login', 'success', 'Administrador configurado. Inicia sesión con Google usando ese correo.');
   } catch {
-    return flashRedirect(req, res, '/setup', 'error', 'Error al guardar el administrador. Intente de nuevo.');
+    return flashRedirect(req, res, `/setup?token=${encodeURIComponent(token)}`, 'error', 'Error al guardar el administrador. Intente de nuevo.');
   }
 });
 

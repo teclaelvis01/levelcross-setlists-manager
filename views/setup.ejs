@@ -1,5 +1,5 @@
 <%
-  const values = typeof formValues !== 'undefined' && formValues ? formValues : { email: '' };
+  const values = typeof formValues !== 'undefined' && formValues ? formValues : { email: '', token: '' };
   const errors = typeof fieldErrors !== 'undefined' && fieldErrors ? fieldErrors : {};
 %>
 
@@ -11,6 +11,7 @@
     <p class="auth-desc">Define el correo del administrador. Después podrás iniciar sesión con Google usando ese mismo correo.</p>
 
     <form action="<%= (typeof baseUrl !== 'undefined' ? baseUrl : '') %>/setup" method="POST" class="auth-form">
+      <input type="hidden" name="token" value="<%= values.token || '' %>">
       <div class="form-group<%= errors.email ? ' is-invalid' : '' %>">
         <label for="email">Correo del administrador</label>
         <input type="email" id="email" name="email" required placeholder="admin@ejemplo.com" autocomplete="email" value="<%= values.email || '' %>" aria-invalid="<%= errors.email ? 'true' : 'false' %>">

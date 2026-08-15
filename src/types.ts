@@ -70,7 +70,6 @@ declare module 'express-session' {
     email?: string;
     oauthState?: string;
     oauthCodeVerifier?: string;
-    allowAdminSetup?: boolean;
     flash?: {
       type: 'error' | 'success' | 'info';
       message: string;
