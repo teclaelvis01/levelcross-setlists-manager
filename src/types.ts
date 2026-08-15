@@ -68,8 +68,6 @@ declare module 'express-session' {
   interface SessionData {
     userId?: number;
     email?: string;
-    oauthState?: string;
-    oauthCodeVerifier?: string;
     flash?: {
       type: 'error' | 'success' | 'info';
       message: string;

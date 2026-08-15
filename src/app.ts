@@ -25,7 +25,9 @@ const BASE_URL = process.env.BASE_URL || '';
 const isDev = process.env.NODE_ENV !== 'production';
 const SESSION_MAX_AGE_MS = 2 * 60 * 60 * 1000; // 2 hours
 const SETUP_TOKEN_TTL_MS = 15 * 60 * 1000; // 15 minutes
+const OAUTH_STATE_TTL_MS = 15 * 60 * 1000;
 const setupTokens = new Map<string, number>();
+const oauthStates = new Map<string, { codeVerifier: string; expiresAt: number }>();
 const DEFAULT_SONGS_PER_PAGE = 12;
 const PAGE_SIZE_OPTIONS = [5, 10, 50];
 const DEFAULT_ROLE_CATEGORIES = ['Músicos', 'Cantantes', 'Sonido', 'Otros'];
@@ -125,6 +127,7 @@ app.use(session({
   resave: false,
   saveUninitialized: false,
   rolling: false,
+  proxy: true,
   cookie: {
     httpOnly: true,
     secure: sessionCookieSecure,
@@ -773,6 +776,32 @@ function invalidateSetupToken(token: string | undefined) {
   if (token) setupTokens.delete(token);
 }
 
+function pruneOAuthStates() {
+  const now = Date.now();
+  for (const [state, entry] of oauthStates) {
+    if (entry.expiresAt <= now) oauthStates.delete(state);
+  }
+}
+
+function storeOAuthState(state: string, codeVerifier: string) {
+  pruneOAuthStates();
+  oauthStates.set(state, { codeVerifier, expiresAt: Date.now() + OAUTH_STATE_TTL_MS });
+}
+
+function takeOAuthState(state: string | undefined): string | null {
+  if (!state) return null;
+  pruneOAuthStates();
+  const entry = oauthStates.get(state);
+  if (!entry) return null;
+  oauthStates.delete(state);
+  if (entry.expiresAt <= Date.now()) return null;
+  return entry.codeVerifier;
+}
+
+function loginErrorRedirect(res: express.Response, code: string) {
+  return res.redirect(url(`/login?error=${encodeURIComponent(code)}`));
+}
+
 function requireAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
   if (!isSetupComplete()) {
     const token = createSetupToken();
@@ -1147,16 +1176,15 @@ function getAdminUser(): User | undefined {
 
 function establishSession(req: express.Request, res: express.Response, user: User, redirectTo: string) {
   if (!req.session) {
-    return flashRedirect(req, res, '/login', 'error', 'No se pudo iniciar la sesión. Intente de nuevo.');
+    return loginErrorRedirect(res, 'oauth_session');
   }
 
   req.session.userId = user.id;
   req.session.email = user.email;
-  delete req.session.oauthState;
-  delete req.session.oauthCodeVerifier;
   req.session.save((err) => {
     if (err) {
-      return flashRedirect(req, res, '/login', 'error', 'No se pudo iniciar la sesión. Intente de nuevo.');
+      console.error('Failed to save login session:', err);
+      return loginErrorRedirect(res, 'oauth_session');
     }
     res.redirect(redirectTo);
   });
@@ -1215,6 +1243,21 @@ app.get('/login', (req, res) => {
   if (!isSetupComplete()) {
     return res.redirect(url('/admin'));
   }
+
+  const errorCode = typeof req.query.error === 'string' ? req.query.error : '';
+  const loginErrors: Record<string, string> = {
+    oauth_config: 'Google OAuth no está configurado. Define GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET y APP_URL en Coolify.',
+    oauth_start: 'No se pudo conectar con Google. Revisa APP_URL, BASE_URL y las credenciales OAuth.',
+    oauth_session: 'No se pudo iniciar la sesión. Intenta de nuevo.',
+    oauth_expired: 'La sesión de autenticación expiró. Intenta de nuevo.',
+    oauth_unverified: 'El correo de Google no está verificado.',
+    oauth_unauthorized: 'Este correo no está autorizado como administrador.',
+    oauth_callback: 'No se pudo completar el inicio de sesión con Google. Verifica el redirect URI en Google Cloud.',
+  };
+  if (errorCode && loginErrors[errorCode]) {
+    res.locals.flash = { type: 'error', message: loginErrors[errorCode] };
+  }
+
   res.render('login', {
     googleConfigured: isGoogleOAuthConfigured(),
   });
@@ -1225,37 +1268,22 @@ app.get('/auth/google', async (req, res) => {
     return res.redirect(url('/admin'));
   }
   if (!isGoogleOAuthConfigured()) {
-    return flashRedirect(
-      req,
-      res,
-      '/login',
-      'error',
-      'Google OAuth no está configurado. Define GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET y APP_URL.'
-    );
-  }
-  if (!req.session) {
-    return flashRedirect(req, res, '/login', 'error', 'No se pudo iniciar la sesión. Intente de nuevo.');
+    return loginErrorRedirect(res, 'oauth_config');
   }
 
   try {
     const state = createOAuthState();
     const { codeVerifier, codeChallenge } = createPkcePair();
-    req.session.oauthState = state;
-    req.session.oauthCodeVerifier = codeVerifier;
+    storeOAuthState(state, codeVerifier);
     const authorizationUrl = await buildGoogleAuthorizationUrl({
       baseUrl: BASE_URL,
       state,
       codeChallenge,
     });
-    req.session.save((err) => {
-      if (err) {
-        return flashRedirect(req, res, '/login', 'error', 'No se pudo iniciar la sesión. Intente de nuevo.');
-      }
-      res.redirect(authorizationUrl);
-    });
+    return res.redirect(authorizationUrl);
   } catch (error) {
     console.error('Google OAuth start failed:', error);
-    return flashRedirect(req, res, '/login', 'error', 'No se pudo conectar con Google. Revisa la configuración OAuth.');
+    return loginErrorRedirect(res, 'oauth_start');
   }
 });
 
@@ -1264,13 +1292,13 @@ app.get('/auth/google/callback', async (req, res) => {
     return res.redirect(url('/admin'));
   }
   if (!isGoogleOAuthConfigured()) {
-    return flashRedirect(req, res, '/login', 'error', 'Google OAuth no está configurado.');
+    return loginErrorRedirect(res, 'oauth_config');
   }
 
-  const expectedState = req.session?.oauthState;
-  const codeVerifier = req.session?.oauthCodeVerifier;
-  if (!req.session || !expectedState || !codeVerifier) {
-    return flashRedirect(req, res, '/login', 'error', 'La sesión de autenticación expiró. Intenta de nuevo.');
+  const state = typeof req.query.state === 'string' ? req.query.state : '';
+  const codeVerifier = takeOAuthState(state);
+  if (!codeVerifier) {
+    return loginErrorRedirect(res, 'oauth_expired');
   }
 
   try {
@@ -1284,17 +1312,17 @@ app.get('/auth/google/callback', async (req, res) => {
     const profile = await exchangeGoogleCallback({
       baseUrl: BASE_URL,
       callbackUrl: callbackUrl.toString(),
-      expectedState,
+      expectedState: state,
       codeVerifier,
     });
 
     if (!profile.emailVerified) {
-      return flashRedirect(req, res, '/login', 'error', 'El correo de Google no está verificado.');
+      return loginErrorRedirect(res, 'oauth_unverified');
     }
 
     const admin = getAdminUser();
     if (!admin || normalizeEmail(admin.email) !== profile.email) {
-      return flashRedirect(req, res, '/login', 'error', 'Este correo no está autorizado como administrador.');
+      return loginErrorRedirect(res, 'oauth_unauthorized');
     }
 
     db.prepare('UPDATE users SET google_sub = ?, name = ? WHERE id = ?').run(profile.sub, profile.name || admin.name || '', admin.id);
@@ -1302,7 +1330,7 @@ app.get('/auth/google/callback', async (req, res) => {
     return establishSession(req, res, updated, url('/admin'));
   } catch (error) {
     console.error('Google OAuth callback failed:', error);
-    return flashRedirect(req, res, '/login', 'error', 'No se pudo completar el inicio de sesión con Google.');
+    return loginErrorRedirect(res, 'oauth_callback');
   }
 });
 

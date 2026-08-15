@@ -164,7 +164,7 @@ Desde el panel de administración (`/admin`):
 - **Backend**: Node.js, Express, TypeScript
 - **Base de datos**: SQLite (better-sqlite3)
 - **Frontend**: EJS templates, CSS personalizado
-- **Autenticación**: express-session, Google OAuth (`openid-client`)
+- **Autenticación**: express-session, Google OAuth
 - **Contenedor**: Docker, Node 22 Slim (Debian Bookworm)
 
 ## 📁 Estructura del proyecto
