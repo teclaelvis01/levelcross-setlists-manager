@@ -1,12 +1,20 @@
+import 'dotenv/config';
 import express from 'express';
 import session from 'express-session';
 import path from 'path';
-import bcrypt from 'bcryptjs';
 import multer from 'multer';
 import fs from 'fs';
 import AdmZip from 'adm-zip';
 import dbDefault, { openDatabase } from './db';
-import { MusicalRole, Song } from './types';
+import {
+  buildGoogleAuthorizationUrl,
+  createOAuthState,
+  createPkcePair,
+  exchangeGoogleCallback,
+  getGoogleRedirectUri,
+  isGoogleOAuthConfigured,
+} from './google-auth';
+import { MusicalRole, Song, User } from './types';
 
 let db = dbDefault;
 
@@ -14,7 +22,7 @@ const app = express();
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const BASE_URL = process.env.BASE_URL || '';
 const isDev = process.env.NODE_ENV !== 'production';
-const SALT_ROUNDS = 10;
+const SESSION_MAX_AGE_MS = 2 * 60 * 60 * 1000; // 2 hours
 const DEFAULT_SONGS_PER_PAGE = 12;
 const PAGE_SIZE_OPTIONS = [5, 10, 50];
 const DEFAULT_ROLE_CATEGORIES = ['Músicos', 'Cantantes', 'Sonido', 'Otros'];
@@ -111,13 +119,14 @@ const sessionCookieSecure = process.env.SESSION_COOKIE_SECURE === 'true'
 app.use(session({
   name: 'setlists_session',
   secret: process.env.SESSION_SECRET || 'setlists-manager-secret-change-in-production',
-  resave: true,
-  saveUninitialized: true,
+  resave: false,
+  saveUninitialized: false,
+  rolling: false,
   cookie: {
     httpOnly: true,
     secure: sessionCookieSecure,
     sameSite: 'lax',
-    maxAge: 24 * 60 * 60 * 1000, // 24 hours
+    maxAge: SESSION_MAX_AGE_MS,
     path: BASE_URL || '/',
   },
 }));
@@ -736,27 +745,30 @@ app.locals.renderLyrics = renderLyrics;
 // ── Auth middleware ──
 
 function requireAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
-  // if (!req.session || !req.session.userId) {
-  //   return res.redirect(`${BASE_URL}/login`);
-  // }
+  if (!isSetupComplete()) {
+    if (!req.session) {
+      return res.redirect(url('/'));
+    }
+    req.session.allowAdminSetup = true;
+    return req.session.save((err) => {
+      if (err) {
+        return res.redirect(url('/'));
+      }
+      res.redirect(url('/setup'));
+    });
+  }
+  if (!req.session || !req.session.userId) {
+    return res.redirect(url('/login'));
+  }
   next();
 }
 
-function verifyStoredPassword(inputPassword: string, storedHash: string): boolean {
-  if (!storedHash) return false;
-  if (storedHash === inputPassword) return true;
-  try {
-    return bcrypt.compareSync(inputPassword, storedHash);
-  } catch {
-    return false;
-  }
+function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
 }
 
-function getDefaultAdminCredentials(): { username: string; password: string } {
-  return {
-    username: (process.env.DEFAULT_ADMIN_USERNAME || 'admin').trim(),
-    password: process.env.DEFAULT_ADMIN_PASSWORD || 'admin',
-  };
+function isValidEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
 function getPaginatedSongs(search: string, page: number, pageSize?: number) {
@@ -786,10 +798,14 @@ function getPaginatedSongs(search: string, page: number, pageSize?: number) {
   };
 }
 
+function url(pathName: string): string {
+  return BASE_URL + pathName;
+}
+
 app.use((req, res, next) => {
   if (req.session) {
     app.locals.isAuthenticated = !!req.session.userId;
-    app.locals.username = req.session.username || '';
+    app.locals.userEmail = req.session.email || '';
     if (req.session.flash) {
       res.locals.flash = req.session.flash;
       delete req.session.flash;
@@ -798,17 +814,11 @@ app.use((req, res, next) => {
     }
   } else {
     app.locals.isAuthenticated = false;
-    app.locals.username = '';
+    app.locals.userEmail = '';
     res.locals.flash = null;
   }
   next();
 });
-
-// ── URL helper for redirects ──
-
-function url(pathName: string): string {
-  return BASE_URL + pathName;
-}
 
 function setFlash(
   req: express.Request,
@@ -1052,9 +1062,6 @@ app.locals.photoSrc = photoSrc;
 // or strips the prefix.
 
 app.get('/', (req, res) => {
-  if (!isSetupComplete()) {
-    return res.redirect(url('/setup'));
-  }
   // Preserve old song-library query bookmarks at the root URL.
   if (req.query.search || req.query.page || req.query.pageSize) {
     const params = new URLSearchParams();
@@ -1069,9 +1076,6 @@ app.get('/', (req, res) => {
 });
 
 app.get('/libreria', (req, res) => {
-  if (!isSetupComplete()) {
-    return res.redirect(url('/setup'));
-  }
   const rawSearch = ((req.query.search as string) || '').trim();
   const search = rawSearch.length >= 3 ? rawSearch : '';
   const requestedPage = parseInt(req.query.page as string, 10) || 1;
@@ -1081,9 +1085,6 @@ app.get('/libreria', (req, res) => {
 });
 
 app.get('/songs/:slug', (req, res) => {
-  if (!isSetupComplete()) {
-    return res.redirect(url('/setup'));
-  }
   const song = db.prepare('SELECT * FROM songs WHERE slug = ?').get(req.params.slug) as Song | undefined;
   if (!song) {
     return flashRedirect(req, res, '/libreria', 'error', 'Canción no encontrada');
@@ -1119,95 +1120,68 @@ function isSetupComplete(): boolean {
   return user.count > 0;
 }
 
-function ensureDefaultAdminUser(username: string, password: string) {
-  const defaultAdmin = getDefaultAdminCredentials();
-  const normalizedUsername = username.trim();
-  const isDefaultPassword = password === defaultAdmin.password;
-  const isDefaultAdminUsername = normalizedUsername === 'admin' || normalizedUsername === defaultAdmin.username;
+function getAdminUser(): User | undefined {
+  return db.prepare('SELECT * FROM users ORDER BY id ASC LIMIT 1').get() as User | undefined;
+}
 
-  if (!isDefaultPassword || !isDefaultAdminUsername) {
-    return undefined;
+function establishSession(req: express.Request, res: express.Response, user: User, redirectTo: string) {
+  if (!req.session) {
+    return flashRedirect(req, res, '/login', 'error', 'No se pudo iniciar la sesión. Intente de nuevo.');
   }
 
-  const candidateUsernames = [...new Set([normalizedUsername, defaultAdmin.username, 'admin'].filter(Boolean))];
-  for (const candidateUsername of candidateUsernames) {
-    const existing = db.prepare('SELECT * FROM users WHERE username = ?').get(candidateUsername) as { id: number; username: string; password_hash: string } | undefined;
-    if (!existing) {
-      continue;
+  req.session.userId = user.id;
+  req.session.email = user.email;
+  delete req.session.oauthState;
+  delete req.session.oauthCodeVerifier;
+  req.session.save((err) => {
+    if (err) {
+      return flashRedirect(req, res, '/login', 'error', 'No se pudo iniciar la sesión. Intente de nuevo.');
     }
-
-    if (existing.password_hash !== defaultAdmin.password) {
-      const hash = bcrypt.hashSync(defaultAdmin.password, SALT_ROUNDS);
-      db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, existing.id);
-    }
-
-    return existing;
-  }
-
-  const hash = bcrypt.hashSync(defaultAdmin.password, SALT_ROUNDS);
-  const insertResult = db.prepare('INSERT INTO users (username, password_hash) VALUES (?, ?)').run(normalizedUsername, hash);
-  return db.prepare('SELECT * FROM users WHERE id = ?').get(insertResult.lastInsertRowid) as { id: number; username: string; password_hash: string } | undefined;
+    res.redirect(redirectTo);
+  });
 }
 
 app.get('/setup', (req, res) => {
   if (isSetupComplete()) {
     return res.redirect(url('/login'));
   }
-  res.render('setup', { formValues: { username: '', password: '', confirm_password: '' }, fieldErrors: {} });
+  if (!req.session?.allowAdminSetup) {
+    return res.redirect(url('/'));
+  }
+  res.render('setup', { formValues: { email: '' }, fieldErrors: {} });
 });
 
 app.post('/setup', (req, res) => {
   if (isSetupComplete()) {
     return res.redirect(url('/login'));
   }
-  const { username, password, confirm_password } = req.body;
-  const formValues = {
-    username: username || '',
-    password: '',
-    confirm_password: '',
-  };
-  if (!username || !password || !confirm_password) {
-    showFormError(res, 'Todos los campos son requeridos');
+  if (!req.session?.allowAdminSetup) {
+    return res.redirect(url('/'));
+  }
+
+  const email = normalizeEmail(String(req.body.email || ''));
+  const formValues = { email };
+  if (!email) {
+    showFormError(res, 'El correo es obligatorio');
     return res.status(400).render('setup', {
       formValues,
-      fieldErrors: {
-        username: !username,
-        password: !password,
-        confirm_password: !confirm_password,
-      },
+      fieldErrors: { email: true },
     });
   }
-  if (password !== confirm_password) {
-    showFormError(res, 'Las contraseñas no coinciden');
+  if (!isValidEmail(email)) {
+    showFormError(res, 'Introduce un correo válido');
     return res.status(400).render('setup', {
-      formValues: { ...formValues, username },
-      fieldErrors: { password: true, confirm_password: true },
+      formValues,
+      fieldErrors: { email: true },
     });
   }
-  if (password.length < 4) {
-    showFormError(res, 'La contraseña debe tener al menos 4 caracteres');
-    return res.status(400).render('setup', {
-      formValues: { ...formValues, username },
-      fieldErrors: { password: true },
-    });
-  }
-  const hash = bcrypt.hashSync(password, SALT_ROUNDS);
+
   try {
-    db.prepare('INSERT INTO users (username, password_hash) VALUES (?, ?)').run(username, hash);
-    if (req.session) {
-      req.session.userId = 1;
-      req.session.username = username;
-      req.session.save((err) => {
-        if (err) {
-          return flashRedirect(req, res, '/setup', 'error', 'No se pudo iniciar la sesión. Intente de nuevo.');
-        }
-        res.redirect(url('/admin'));
-      });
-      return;
-    }
-    res.redirect(url('/admin'));
+    db.prepare('INSERT INTO users (email, google_sub, name) VALUES (?, NULL, ?)').run(email, '');
+    delete req.session.allowAdminSetup;
+    return flashRedirect(req, res, '/login', 'success', 'Administrador configurado. Inicia sesión con Google usando ese correo.');
   } catch {
-    return flashRedirect(req, res, '/setup', 'error', 'Error al crear el usuario. Intente de nuevo.');
+    return flashRedirect(req, res, '/setup', 'error', 'Error al guardar el administrador. Intente de nuevo.');
   }
 });
 
@@ -1216,59 +1190,97 @@ app.get('/login', (req, res) => {
     return res.redirect(url('/admin'));
   }
   if (!isSetupComplete()) {
-    return res.redirect(url('/setup'));
+    return res.redirect(url('/admin'));
   }
-  res.render('login', { error: null });
+  res.render('login', {
+    googleConfigured: isGoogleOAuthConfigured(),
+  });
 });
 
-app.post('/login', (req, res) => {
-  const { username, password } = req.body;
-  if (!username || !password) {
-    return res.status(400).json({ success: false, error: 'Usuario y contraseña requeridos' });
+app.get('/auth/google', async (req, res) => {
+  if (!isSetupComplete()) {
+    return res.redirect(url('/admin'));
+  }
+  if (!isGoogleOAuthConfigured()) {
+    return flashRedirect(
+      req,
+      res,
+      '/login',
+      'error',
+      'Google OAuth no está configurado. Define GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET y APP_URL.'
+    );
+  }
+  if (!req.session) {
+    return flashRedirect(req, res, '/login', 'error', 'No se pudo iniciar la sesión. Intente de nuevo.');
   }
 
-  const defaultAdmin = getDefaultAdminCredentials();
-  const isDefaultAdminAttempt = username === defaultAdmin.username && password === defaultAdmin.password;
-
-  let user = db.prepare('SELECT * FROM users WHERE username = ?').get(username) as { id: number; username: string; password_hash: string } | undefined;
-
-  if (!user && isDefaultAdminAttempt) {
-    const hash = bcrypt.hashSync(defaultAdmin.password, SALT_ROUNDS);
-    const inserted = db.prepare('INSERT INTO users (username, password_hash) VALUES (?, ?)').run(defaultAdmin.username, hash) as { lastInsertRowid: number };
-    user = {
-      id: inserted.lastInsertRowid as number,
-      username: defaultAdmin.username,
-      password_hash: hash,
-    };
-  }
-
-  if (!user) {
-    return res.status(401).json({ success: false, error: 'Credenciales inválidas' });
-  }
-
-  const passwordMatches = verifyStoredPassword(password, user.password_hash);
-  if (!passwordMatches) {
-    return res.status(401).json({ success: false, error: 'Credenciales inválidas' });
-  }
-
-  if (isDefaultAdminAttempt || user.password_hash === password || user.password_hash.startsWith('$2') === false) {
-    const hash = bcrypt.hashSync(password, SALT_ROUNDS);
-    db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, user.id);
-    user.password_hash = hash;
-  }
-
-  if (req.session) {
-    req.session.userId = user.id;
-    req.session.username = user.username;
+  try {
+    const state = createOAuthState();
+    const { codeVerifier, codeChallenge } = createPkcePair();
+    req.session.oauthState = state;
+    req.session.oauthCodeVerifier = codeVerifier;
+    const authorizationUrl = await buildGoogleAuthorizationUrl({
+      baseUrl: BASE_URL,
+      state,
+      codeChallenge,
+    });
     req.session.save((err) => {
       if (err) {
-        return res.status(500).json({ success: false, error: 'No se pudo iniciar la sesión. Intente de nuevo.' });
+        return flashRedirect(req, res, '/login', 'error', 'No se pudo iniciar la sesión. Intente de nuevo.');
       }
-      res.json({ success: true, redirectTo: url('/admin') });
+      res.redirect(authorizationUrl);
     });
-    return;
+  } catch (error) {
+    console.error('Google OAuth start failed:', error);
+    return flashRedirect(req, res, '/login', 'error', 'No se pudo conectar con Google. Revisa la configuración OAuth.');
   }
-  res.json({ success: true, redirectTo: url('/admin') });
+});
+
+app.get('/auth/google/callback', async (req, res) => {
+  if (!isSetupComplete()) {
+    return res.redirect(url('/admin'));
+  }
+  if (!isGoogleOAuthConfigured()) {
+    return flashRedirect(req, res, '/login', 'error', 'Google OAuth no está configurado.');
+  }
+
+  const expectedState = req.session?.oauthState;
+  const codeVerifier = req.session?.oauthCodeVerifier;
+  if (!req.session || !expectedState || !codeVerifier) {
+    return flashRedirect(req, res, '/login', 'error', 'La sesión de autenticación expiró. Intenta de nuevo.');
+  }
+
+  try {
+    const callbackUrl = new URL(getGoogleRedirectUri(BASE_URL));
+    for (const [key, value] of Object.entries(req.query)) {
+      if (typeof value === 'string') {
+        callbackUrl.searchParams.set(key, value);
+      }
+    }
+
+    const profile = await exchangeGoogleCallback({
+      baseUrl: BASE_URL,
+      callbackUrl: callbackUrl.toString(),
+      expectedState,
+      codeVerifier,
+    });
+
+    if (!profile.emailVerified) {
+      return flashRedirect(req, res, '/login', 'error', 'El correo de Google no está verificado.');
+    }
+
+    const admin = getAdminUser();
+    if (!admin || normalizeEmail(admin.email) !== profile.email) {
+      return flashRedirect(req, res, '/login', 'error', 'Este correo no está autorizado como administrador.');
+    }
+
+    db.prepare('UPDATE users SET google_sub = ?, name = ? WHERE id = ?').run(profile.sub, profile.name || admin.name || '', admin.id);
+    const updated = db.prepare('SELECT * FROM users WHERE id = ?').get(admin.id) as User;
+    return establishSession(req, res, updated, url('/admin'));
+  } catch (error) {
+    console.error('Google OAuth callback failed:', error);
+    return flashRedirect(req, res, '/login', 'error', 'No se pudo completar el inicio de sesión con Google.');
+  }
 });
 
 app.get('/logout', (req, res) => {
@@ -1909,6 +1921,9 @@ app.listen(PORT, '0.0.0.0', () => {
 
   const userCount = (db.prepare('SELECT COUNT(*) as count FROM users').get() as { count: number }).count;
   if (userCount === 0) {
-    console.log(`⚠️  No hay usuarios configurados. Visita ${urlStr}/setup para crear el administrador.`);
+    console.log(`⚠️  No hay administrador configurado. Visita ${urlStr}/setup para definir el correo admin.`);
+  }
+  if (!isGoogleOAuthConfigured()) {
+    console.log('⚠️  Google OAuth no configurado. Define GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET y APP_URL.');
   }
 });

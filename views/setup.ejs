@@ -1,5 +1,5 @@
 <%
-  const values = typeof formValues !== 'undefined' && formValues ? formValues : { username: '', password: '', confirm_password: '' };
+  const values = typeof formValues !== 'undefined' && formValues ? formValues : { email: '' };
   const errors = typeof fieldErrors !== 'undefined' && fieldErrors ? fieldErrors : {};
 %>
 
@@ -7,26 +7,16 @@
 
 <div class="auth-container">
   <div class="auth-card">
-    <h1>⚙️ Configuración Inicial</h1>
-    <p class="auth-desc">Crea el usuario administrador para gestionar el setlist.</p>
+    <h1>Configuración inicial</h1>
+    <p class="auth-desc">Define el correo del administrador. Después podrás iniciar sesión con Google usando ese mismo correo.</p>
 
     <form action="<%= (typeof baseUrl !== 'undefined' ? baseUrl : '') %>/setup" method="POST" class="auth-form">
-      <div class="form-group<%= errors.username ? ' is-invalid' : '' %>">
-        <label for="username">Usuario</label>
-        <input type="text" id="username" name="username" required placeholder="admin" autocomplete="username" value="<%= values.username || '' %>" aria-invalid="<%= errors.username ? 'true' : 'false' %>">
-        <% if (errors.username) { %><p class="field-error">El usuario es obligatorio</p><% } %>
+      <div class="form-group<%= errors.email ? ' is-invalid' : '' %>">
+        <label for="email">Correo del administrador</label>
+        <input type="email" id="email" name="email" required placeholder="admin@ejemplo.com" autocomplete="email" value="<%= values.email || '' %>" aria-invalid="<%= errors.email ? 'true' : 'false' %>">
+        <% if (errors.email) { %><p class="field-error">Introduce un correo válido</p><% } %>
       </div>
-      <div class="form-group<%= errors.password ? ' is-invalid' : '' %>">
-        <label for="password">Contraseña</label>
-        <input type="password" id="password" name="password" required minlength="4" placeholder="••••" autocomplete="new-password" aria-invalid="<%= errors.password ? 'true' : 'false' %>">
-        <% if (errors.password) { %><p class="field-error">Revisa la contraseña</p><% } %>
-      </div>
-      <div class="form-group<%= errors.confirm_password ? ' is-invalid' : '' %>">
-        <label for="confirm_password">Confirmar contraseña</label>
-        <input type="password" id="confirm_password" name="confirm_password" required minlength="4" placeholder="••••" autocomplete="new-password" aria-invalid="<%= errors.confirm_password ? 'true' : 'false' %>">
-        <% if (errors.confirm_password) { %><p class="field-error">Confirma la contraseña</p><% } %>
-      </div>
-      <button type="submit" class="btn btn-primary btn-full">Crear Administrador</button>
+      <button type="submit" class="btn btn-primary btn-full">Guardar y continuar</button>
     </form>
   </div>
 </div>

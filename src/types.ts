@@ -57,15 +57,20 @@ export interface MusicalRole {
 
 export interface User {
   id: number;
-  username: string;
-  password_hash: string;
+  email: string;
+  google_sub: string | null;
+  name: string;
+  created_at: string;
 }
 
 // Extend express-session to include our custom fields
 declare module 'express-session' {
   interface SessionData {
     userId?: number;
-    username?: string;
+    email?: string;
+    oauthState?: string;
+    oauthCodeVerifier?: string;
+    allowAdminSetup?: boolean;
     flash?: {
       type: 'error' | 'success' | 'info';
       message: string;

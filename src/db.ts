@@ -1,7 +1,6 @@
 import Database = require('better-sqlite3');
 import path from 'path';
 import fs from 'fs';
-import bcrypt from 'bcryptjs';
 
 const dbPath = path.join(__dirname, '..', 'data', 'setlists.db');
 
@@ -26,13 +25,42 @@ export function openDatabase() {
 
 const db = openDatabase();
 
-db.exec(`
-  CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    username TEXT NOT NULL UNIQUE,
-    password_hash TEXT NOT NULL
-  )
-`);
+function ensureUsersTable() {
+  const table = db.prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'users'`).get() as { name: string } | undefined;
+  if (!table) {
+    db.exec(`
+      CREATE TABLE users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        email TEXT NOT NULL UNIQUE,
+        google_sub TEXT,
+        name TEXT DEFAULT '',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    return;
+  }
+
+  const columns = db.prepare('PRAGMA table_info(users)').all() as { name: string }[];
+  const columnNames = new Set(columns.map((column) => column.name));
+  const isLegacySchema = columnNames.has('username') || columnNames.has('password_hash') || !columnNames.has('email');
+  if (!isLegacySchema) {
+    return;
+  }
+
+  // Existing password-based installs must re-run /setup with an admin email.
+  db.exec('DROP TABLE users');
+  db.exec(`
+    CREATE TABLE users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      email TEXT NOT NULL UNIQUE,
+      google_sub TEXT,
+      name TEXT DEFAULT '',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+}
+
+ensureUsersTable();
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS songs (
@@ -288,15 +316,5 @@ try { db.exec('DROP INDEX IF EXISTS sqlite_autoindex_songs_1'); } catch {}
 // Ensure we have a unique index on slug
 try { db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_songs_slug ON songs(slug)'); } catch {}
 try { db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_activities_slug ON activities(slug)'); } catch {}
-
-// Ensure a default admin user exists for fresh deployments.
-// This keeps the initial login flow working even when the database was just created.
-const defaultAdminUsername = process.env.DEFAULT_ADMIN_USERNAME || 'admin';
-const defaultAdminPassword = process.env.DEFAULT_ADMIN_PASSWORD || 'admin';
-const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get() as { count: number };
-if (userCount.count === 0) {
-  const passwordHash = bcrypt.hashSync(defaultAdminPassword, 10);
-  db.prepare('INSERT INTO users (username, password_hash) VALUES (?, ?)').run(defaultAdminUsername, passwordHash);
-}
 
 export default db;

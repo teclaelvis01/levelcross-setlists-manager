@@ -13,7 +13,7 @@
       <div class="nav-links">
         <% if (typeof isAuthenticated !== 'undefined' && isAuthenticated) { %>
           <a href="<%= (typeof baseUrl !== 'undefined' ? baseUrl : '') %>/admin" class="nav-link">Admin</a>
-          <span class="nav-user"><%= username %></span>
+          <span class="nav-user"><%= userEmail %></span>
           <a href="<%= (typeof baseUrl !== 'undefined' ? baseUrl : '') %>/logout" class="btn btn-secondary btn-sm">Salir</a>
         <% } %>
       </div>

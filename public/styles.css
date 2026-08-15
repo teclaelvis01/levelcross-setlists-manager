@@ -955,6 +955,40 @@ body.photo-crop-open {
   margin-bottom: 16px;
 }
 
+.auth-warning {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.auth-warning code {
+  font-size: 0.8rem;
+}
+
+.btn-google {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: #fff;
+  color: #1f1f1f;
+  border: 1px solid var(--border);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.btn-google:hover {
+  background: #f8f9fa;
+  color: #1f1f1f;
+}
+
+.btn-google-icon {
+  display: inline-flex;
+  line-height: 0;
+}
+
 .alert {
   padding: 10px 14px;
   border-radius: var(--radius-sm);
