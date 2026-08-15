@@ -68,7 +68,7 @@
             : [];
           const initial = (person.name || 'P').charAt(0).toUpperCase();
         %>
-          <div class="person-assign-card<%= selected ? ' is-selected' : '' %>">
+          <div class="person-assign-card<%= selected ? ' is-selected' : '' %>" data-person-card>
             <label class="person-assign-card__main">
               <input
                 type="checkbox"
@@ -91,7 +91,7 @@
                 <% availableRoles.forEach(role => {
                   const roleChecked = selected && selectedRoles.includes(role);
                 %>
-                  <label class="chip-option">
+                  <label class="chip-option" data-role-chip>
                     <input
                       type="checkbox"
                       name="person_roles[<%= person.id %>][]"
@@ -119,36 +119,90 @@
       <div class="empty-state compact">
         <p>No hay canciones creadas aún.</p>
       </div>
-    <% } else { %>
-      <div class="song-picker-grid">
-        <% const selectedSongs = typeof assignedSongs !== 'undefined' && assignedSongs ? assignedSongs : []; %>
-        <% songs.forEach(song => {
-          const selected = selectedSongs.some(s => s.id === song.id);
-          const assignedSong = selectedSongs.find(s => s.id === song.id);
-        %>
-          <div class="song-picker-item<%= selected ? ' is-selected' : '' %>">
-            <div class="song-picker-header">
-              <label class="song-picker-select">
-                <input type="checkbox" class="picker-checkbox" name="song_ids" value="<%= song.id %>" <%= selected ? 'checked' : '' %> data-song-toggle>
-                <span class="song-picker-title"><%= song.title %></span>
-                <% if (song.artist) { %>
-                  <small class="song-picker-artist"><%= song.artist %></small>
-                <% } %>
-              </label>
-              <input
-                type="number"
-                class="song-order-input"
-                name="song_order[<%= song.id %>]"
-                min="1"
-                value="<%= assignedSong && assignedSong.position ? assignedSong.position : 1 %>"
-                aria-label="Orden de <%= song.title %>"
-                <%= selected ? '' : 'disabled' %>
-                data-song-order
-              >
-            </div>
+    <% } else {
+      const selectedSongs = typeof assignedSongs !== 'undefined' && assignedSongs ? assignedSongs : [];
+      const orderedSelected = selectedSongs
+        .slice()
+        .sort((a, b) => (a.position || 0) - (b.position || 0));
+      const selectedIds = orderedSelected.map((song) => song.id);
+    %>
+      <p class="help-text">Añade canciones desde la biblioteca. Arrastra para cambiar el orden del setlist.</p>
+
+      <div class="setlist-builder" data-setlist-builder>
+        <div class="setlist-ordered-wrap">
+          <div class="setlist-ordered-head">
+            <strong>Setlist</strong>
+            <span class="setlist-ordered-count" data-setlist-count><%= orderedSelected.length %></span>
           </div>
-        <% }) %>
+          <ol class="setlist-ordered" data-setlist-ordered>
+            <% if (orderedSelected.length === 0) { %>
+              <li class="setlist-empty" data-setlist-empty>Todavía no hay canciones. Elige alguna abajo.</li>
+            <% } %>
+            <% orderedSelected.forEach((song, index) => { %>
+              <li class="setlist-item" draggable="true" data-setlist-item data-song-id="<%= song.id %>">
+                <span class="setlist-item__handle" aria-hidden="true" title="Arrastrar">⋮⋮</span>
+                <span class="setlist-item__order" data-order-badge><%= index + 1 %></span>
+                <div class="setlist-item__info">
+                  <strong><%= song.title %></strong>
+                  <% if (song.artist) { %><small><%= song.artist %></small><% } %>
+                </div>
+                <button type="button" class="setlist-item__remove" data-song-remove aria-label="Quitar <%= song.title %>">×</button>
+                <input type="hidden" name="song_ids" value="<%= song.id %>">
+                <input type="hidden" name="song_order[<%= song.id %>]" value="<%= index + 1 %>" data-song-order>
+              </li>
+            <% }) %>
+          </ol>
+        </div>
+
+        <div class="setlist-library-wrap">
+          <div class="setlist-ordered-head">
+            <strong>Biblioteca</strong>
+            <span class="help-text" style="margin:0">Clic para añadir</span>
+          </div>
+          <div class="setlist-library" data-setlist-library>
+            <% songs.forEach((song) => {
+              if (selectedIds.includes(song.id)) return;
+            %>
+              <button
+                type="button"
+                class="setlist-pool-item"
+                data-song-add
+                data-song-id="<%= song.id %>"
+                data-song-title="<%= song.title %>"
+                data-song-artist="<%= song.artist || '' %>"
+              >
+                <span class="setlist-pool-item__title"><%= song.title %></span>
+                <% if (song.artist) { %>
+                  <small class="setlist-pool-item__artist"><%= song.artist %></small>
+                <% } %>
+                <span class="setlist-pool-item__add" aria-hidden="true">+</span>
+              </button>
+            <% }) %>
+          </div>
+        </div>
       </div>
+
+      <template data-setlist-item-template>
+        <li class="setlist-item" draggable="true" data-setlist-item>
+          <span class="setlist-item__handle" aria-hidden="true" title="Arrastrar">⋮⋮</span>
+          <span class="setlist-item__order" data-order-badge>1</span>
+          <div class="setlist-item__info">
+            <strong data-title></strong>
+            <small data-artist hidden></small>
+          </div>
+          <button type="button" class="setlist-item__remove" data-song-remove aria-label="Quitar">×</button>
+          <input type="hidden" name="song_ids" value="" data-input-id>
+          <input type="hidden" name="" value="1" data-song-order data-input-order>
+        </li>
+      </template>
+
+      <template data-setlist-pool-template>
+        <button type="button" class="setlist-pool-item" data-song-add>
+          <span class="setlist-pool-item__title" data-title></span>
+          <small class="setlist-pool-item__artist" data-artist hidden></small>
+          <span class="setlist-pool-item__add" aria-hidden="true">+</span>
+        </button>
+      </template>
     <% } %>
   </div>
 
@@ -169,19 +223,163 @@
 <% } %>
 
 <script>
-  document.querySelectorAll('[data-song-toggle]').forEach((checkbox) => {
-    const item = checkbox.closest('.song-picker-item');
-    const orderInput = item && item.querySelector('[data-song-order]');
-    if (!item || !orderInput) return;
+  (function initSetlistBuilder() {
+    const builder = document.querySelector('[data-setlist-builder]');
+    if (!builder) return;
 
-    const sync = () => {
-      orderInput.disabled = !checkbox.checked;
-      item.classList.toggle('is-selected', checkbox.checked);
-    };
+    const orderedList = builder.querySelector('[data-setlist-ordered]');
+    const library = builder.querySelector('[data-setlist-library]');
+    const countEl = builder.querySelector('[data-setlist-count]');
+    const itemTemplate = document.querySelector('[data-setlist-item-template]');
+    const poolTemplate = document.querySelector('[data-setlist-pool-template]');
+    if (!orderedList || !library || !itemTemplate || !poolTemplate) return;
 
-    checkbox.addEventListener('change', sync);
-    sync();
-  });
+    let dragItem = null;
+
+    function getItems() {
+      return Array.from(orderedList.querySelectorAll('[data-setlist-item]'));
+    }
+
+    function ensureEmptyState() {
+      const empty = orderedList.querySelector('[data-setlist-empty]');
+      const items = getItems();
+      if (items.length === 0 && !empty) {
+        const li = document.createElement('li');
+        li.className = 'setlist-empty';
+        li.dataset.setlistEmpty = '';
+        li.textContent = 'Todavía no hay canciones. Elige alguna abajo.';
+        orderedList.appendChild(li);
+      }
+      if (items.length > 0 && empty) empty.remove();
+      if (countEl) countEl.textContent = String(items.length);
+    }
+
+    function renumber() {
+      getItems().forEach((item, index) => {
+        const order = index + 1;
+        const badge = item.querySelector('[data-order-badge]');
+        const orderInput = item.querySelector('[data-song-order]');
+        if (badge) badge.textContent = String(order);
+        if (orderInput) orderInput.value = String(order);
+      });
+      ensureEmptyState();
+    }
+
+    function createOrderedItem(songId, title, artist) {
+      const node = itemTemplate.content.firstElementChild.cloneNode(true);
+      node.dataset.songId = String(songId);
+      node.querySelector('[data-title]').textContent = title;
+      const artistEl = node.querySelector('[data-artist]');
+      if (artist) {
+        artistEl.textContent = artist;
+        artistEl.hidden = false;
+      } else {
+        artistEl.hidden = true;
+        artistEl.textContent = '';
+      }
+      node.querySelector('[data-song-remove]').setAttribute('aria-label', 'Quitar ' + title);
+      node.querySelector('[data-input-id]').value = String(songId);
+      const orderInput = node.querySelector('[data-input-order]');
+      orderInput.name = 'song_order[' + songId + ']';
+      orderInput.value = '1';
+      return node;
+    }
+
+    function createPoolItem(songId, title, artist) {
+      const node = poolTemplate.content.firstElementChild.cloneNode(true);
+      node.dataset.songId = String(songId);
+      node.dataset.songTitle = title;
+      node.dataset.songArtist = artist || '';
+      node.querySelector('[data-title]').textContent = title;
+      const artistEl = node.querySelector('[data-artist]');
+      if (artist) {
+        artistEl.textContent = artist;
+        artistEl.hidden = false;
+      } else {
+        artistEl.hidden = true;
+        artistEl.textContent = '';
+      }
+      return node;
+    }
+
+    function addSong(songId, title, artist, poolButton) {
+      if (orderedList.querySelector('[data-song-id="' + songId + '"]')) return;
+      const item = createOrderedItem(songId, title, artist);
+      orderedList.appendChild(item);
+      if (poolButton) poolButton.remove();
+      bindItem(item);
+      renumber();
+    }
+
+    function removeSong(item) {
+      const songId = item.dataset.songId;
+      const titleEl = item.querySelector('.setlist-item__info strong');
+      const artistEl = item.querySelector('.setlist-item__info small');
+      const titleText = titleEl ? titleEl.textContent.trim() : '';
+      const artistText = artistEl && !artistEl.hidden && artistEl.textContent.trim()
+        ? artistEl.textContent.trim()
+        : '';
+      item.remove();
+      library.appendChild(createPoolItem(songId, titleText, artistText));
+      renumber();
+    }
+
+    function bindItem(item) {
+      item.addEventListener('dragstart', (event) => {
+        dragItem = item;
+        item.classList.add('is-dragging');
+        if (event.dataTransfer) {
+          event.dataTransfer.effectAllowed = 'move';
+          event.dataTransfer.setData('text/plain', item.dataset.songId || '');
+        }
+      });
+
+      item.addEventListener('dragend', () => {
+        item.classList.remove('is-dragging');
+        orderedList.querySelectorAll('.is-drag-over').forEach((el) => el.classList.remove('is-drag-over'));
+        dragItem = null;
+        renumber();
+      });
+
+      item.addEventListener('dragover', (event) => {
+        event.preventDefault();
+        if (!dragItem || dragItem === item) return;
+        const rect = item.getBoundingClientRect();
+        const before = event.clientY < rect.top + rect.height / 2;
+        orderedList.querySelectorAll('.is-drag-over').forEach((el) => el.classList.remove('is-drag-over'));
+        item.classList.add('is-drag-over');
+        if (before) orderedList.insertBefore(dragItem, item);
+        else orderedList.insertBefore(dragItem, item.nextSibling);
+      });
+
+      const removeBtn = item.querySelector('[data-song-remove]');
+      if (removeBtn) {
+        removeBtn.addEventListener('click', (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          removeSong(item);
+        });
+      }
+    }
+
+    library.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-song-add]');
+      if (!button || !library.contains(button)) return;
+      addSong(
+        button.dataset.songId,
+        button.dataset.songTitle || button.querySelector('.setlist-pool-item__title')?.textContent || '',
+        button.dataset.songArtist || '',
+        button
+      );
+    });
+
+    orderedList.addEventListener('dragover', (event) => {
+      event.preventDefault();
+    });
+
+    getItems().forEach(bindItem);
+    ensureEmptyState();
+  })();
 
   document.querySelectorAll('[data-person-toggle]').forEach((checkbox) => {
     const card = checkbox.closest('.person-assign-card');
@@ -203,10 +401,30 @@
       });
     };
 
+    const togglePerson = () => {
+      checkbox.checked = !checkbox.checked;
+      checkbox.dispatchEvent(new Event('change', { bubbles: true }));
+    };
+
     roleInputs.forEach((roleInput) => {
       roleInput.addEventListener('change', () => {
         card.dataset.rolesTouched = '1';
+        if (roleInput.checked && !checkbox.checked) {
+          checkbox.checked = true;
+          sync();
+        }
       });
+    });
+
+    card.addEventListener('click', (event) => {
+      if (event.target.closest('[data-role-chip], [data-person-role], .person-assign-card__roles')) {
+        return;
+      }
+      if (event.target.closest('.person-assign-card__main')) {
+        return;
+      }
+      event.preventDefault();
+      togglePerson();
     });
 
     checkbox.addEventListener('change', sync);
