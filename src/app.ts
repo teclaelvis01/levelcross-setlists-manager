@@ -9,11 +9,12 @@ import AdmZip from 'adm-zip';
 import dbDefault, { openDatabase } from './db';
 import {
   buildGoogleAuthorizationUrl,
-  createOAuthState,
   createPkcePair,
+  createSignedOAuthState,
   exchangeGoogleCallback,
   getGoogleRedirectUri,
   isGoogleOAuthConfigured,
+  parseSignedOAuthState,
 } from './google-auth';
 import { MusicalRole, Song, User } from './types';
 
@@ -25,9 +26,7 @@ const BASE_URL = process.env.BASE_URL || '';
 const isDev = process.env.NODE_ENV !== 'production';
 const SESSION_MAX_AGE_MS = 2 * 60 * 60 * 1000; // 2 hours
 const SETUP_TOKEN_TTL_MS = 15 * 60 * 1000; // 15 minutes
-const OAUTH_STATE_TTL_MS = 15 * 60 * 1000;
 const setupTokens = new Map<string, number>();
-const oauthStates = new Map<string, { codeVerifier: string; expiresAt: number }>();
 const DEFAULT_SONGS_PER_PAGE = 12;
 const PAGE_SIZE_OPTIONS = [5, 10, 50];
 const DEFAULT_ROLE_CATEGORIES = ['Músicos', 'Cantantes', 'Sonido', 'Otros'];
@@ -776,28 +775,6 @@ function invalidateSetupToken(token: string | undefined) {
   if (token) setupTokens.delete(token);
 }
 
-function pruneOAuthStates() {
-  const now = Date.now();
-  for (const [state, entry] of oauthStates) {
-    if (entry.expiresAt <= now) oauthStates.delete(state);
-  }
-}
-
-function storeOAuthState(state: string, codeVerifier: string) {
-  pruneOAuthStates();
-  oauthStates.set(state, { codeVerifier, expiresAt: Date.now() + OAUTH_STATE_TTL_MS });
-}
-
-function takeOAuthState(state: string | undefined): string | null {
-  if (!state) return null;
-  pruneOAuthStates();
-  const entry = oauthStates.get(state);
-  if (!entry) return null;
-  oauthStates.delete(state);
-  if (entry.expiresAt <= Date.now()) return null;
-  return entry.codeVerifier;
-}
-
 function loginErrorRedirect(res: express.Response, code: string) {
   return res.redirect(url(`/login?error=${encodeURIComponent(code)}`));
 }
@@ -1272,9 +1249,8 @@ app.get('/auth/google', async (req, res) => {
   }
 
   try {
-    const state = createOAuthState();
     const { codeVerifier, codeChallenge } = createPkcePair();
-    storeOAuthState(state, codeVerifier);
+    const state = createSignedOAuthState(codeVerifier);
     const authorizationUrl = await buildGoogleAuthorizationUrl({
       baseUrl: BASE_URL,
       state,
@@ -1296,7 +1272,7 @@ app.get('/auth/google/callback', async (req, res) => {
   }
 
   const state = typeof req.query.state === 'string' ? req.query.state : '';
-  const codeVerifier = takeOAuthState(state);
+  const codeVerifier = parseSignedOAuthState(state);
   if (!codeVerifier) {
     return loginErrorRedirect(res, 'oauth_expired');
   }

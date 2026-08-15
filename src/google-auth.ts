@@ -1,8 +1,9 @@
-import { createHash, randomBytes } from 'crypto';
+import { createHmac, createHash, randomBytes, timingSafeEqual } from 'crypto';
 
 const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const GOOGLE_USERINFO_URL = 'https://openidconnect.googleapis.com/v1/userinfo';
+const OAUTH_STATE_TTL_MS = 15 * 60 * 1000;
 
 function requireEnv(name: string): string {
   const value = (process.env[name] || '').trim();
@@ -14,6 +15,15 @@ function requireEnv(name: string): string {
 
 function base64Url(buffer: Buffer): string {
   return buffer.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+
+function fromBase64Url(value: string): Buffer {
+  const padded = value.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((value.length + 3) % 4);
+  return Buffer.from(padded, 'base64');
+}
+
+function oauthSigningSecret(): string {
+  return process.env.SESSION_SECRET || process.env.GOOGLE_CLIENT_SECRET || 'setlists-manager-secret-change-in-production';
 }
 
 export function getAppUrl(): string {
@@ -33,14 +43,48 @@ export function isGoogleOAuthConfigured(): boolean {
   return Boolean((process.env.GOOGLE_CLIENT_ID || '').trim() && (process.env.GOOGLE_CLIENT_SECRET || '').trim());
 }
 
-export function createOAuthState(): string {
-  return base64Url(randomBytes(24));
-}
-
 export function createPkcePair(): { codeVerifier: string; codeChallenge: string } {
   const codeVerifier = base64Url(randomBytes(32));
   const codeChallenge = base64Url(createHash('sha256').update(codeVerifier).digest());
   return { codeVerifier, codeChallenge };
+}
+
+/** Signed state that carries the PKCE verifier — no server-side session/memory required. */
+export function createSignedOAuthState(codeVerifier: string): string {
+  const payload = {
+    v: codeVerifier,
+    n: base64Url(randomBytes(16)),
+    e: Date.now() + OAUTH_STATE_TTL_MS,
+  };
+  const body = base64Url(Buffer.from(JSON.stringify(payload), 'utf8'));
+  const sig = createHmac('sha256', oauthSigningSecret()).update(body).digest();
+  return `${body}.${base64Url(sig)}`;
+}
+
+export function parseSignedOAuthState(state: string | undefined): string | null {
+  if (!state) return null;
+  const [body, sig] = state.split('.');
+  if (!body || !sig) return null;
+
+  const expected = createHmac('sha256', oauthSigningSecret()).update(body).digest();
+  let provided: Buffer;
+  try {
+    provided = fromBase64Url(sig);
+  } catch {
+    return null;
+  }
+  if (provided.length !== expected.length || !timingSafeEqual(provided, expected)) {
+    return null;
+  }
+
+  try {
+    const payload = JSON.parse(fromBase64Url(body).toString('utf8')) as { v?: string; e?: number };
+    if (!payload.v || typeof payload.v !== 'string') return null;
+    if (!payload.e || payload.e < Date.now()) return null;
+    return payload.v;
+  } catch {
+    return null;
+  }
 }
 
 export async function buildGoogleAuthorizationUrl(options: {
