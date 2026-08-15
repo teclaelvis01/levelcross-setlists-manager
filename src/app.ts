@@ -4,6 +4,7 @@ import path from 'path';
 import bcrypt from 'bcryptjs';
 import multer from 'multer';
 import fs from 'fs';
+import AdmZip from 'adm-zip';
 import dbDefault, { openDatabase } from './db';
 import { MusicalRole, Song } from './types';
 
@@ -22,15 +23,24 @@ app.locals.baseUrl = BASE_URL;
 const dataRoot = path.join(__dirname, '..', 'data');
 const uploadsRoot = path.join(dataRoot, 'uploads');
 const peopleUploadsDir = path.join(uploadsRoot, 'people');
+const tmpDir = path.join(dataRoot, 'tmp');
 const MAX_PERSON_PHOTO_BYTES = 1 * 1024 * 1024; // 1 MB
+const MAX_BACKUP_UPLOAD_BYTES = 100 * 1024 * 1024; // 100 MB
 const ALLOWED_PERSON_PHOTO_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
+const ALLOWED_MEDIA_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif']);
 
 if (!fs.existsSync(peopleUploadsDir)) {
   fs.mkdirSync(peopleUploadsDir, { recursive: true });
 }
+if (!fs.existsSync(tmpDir)) {
+  fs.mkdirSync(tmpDir, { recursive: true });
+}
 
-// Multer: DB import
-const upload = multer({ dest: uploadsRoot });
+// Multer: DB / multimedia backups
+const backupUpload = multer({
+  dest: tmpDir,
+  limits: { fileSize: MAX_BACKUP_UPLOAD_BYTES },
+});
 
 // Multer: person photos
 const personPhotoUpload = multer({
@@ -283,9 +293,19 @@ function getActivityPeoplePreview(activityId: number) {
     SELECT p.id, p.name, p.photo_url
     FROM activity_people a_p
     JOIN people p ON p.id = a_p.person_id
-    WHERE a_p.activity_id = ?
+    WHERE a_p.activity_id = ? AND p.deleted_at IS NULL
     ORDER BY p.name ASC
   `).all(activityId) as Array<{ id: number; name: string; photo_url: string }>;
+}
+
+function listActivitiesWithPeople() {
+  return (db.prepare(`
+    SELECT * FROM activities
+    ORDER BY activity_date DESC, COALESCE(NULLIF(activity_time, ''), '00:00') DESC, name ASC
+  `).all() as any[]).map((activity) => ({
+    ...activity,
+    people: getActivityPeoplePreview(activity.id),
+  }));
 }
 
 function listMusicalRoles(): MusicalRole[] {
@@ -524,6 +544,63 @@ function deleteLocalPersonPhoto(photoUrl: string | null | undefined) {
   } catch {
     // ignore cleanup errors
   }
+}
+
+function countMultimediaFiles(dir: string = uploadsRoot): number {
+  if (!fs.existsSync(dir)) return 0;
+  let count = 0;
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (entry.name.startsWith('.')) continue;
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      count += countMultimediaFiles(fullPath);
+    } else if (entry.isFile()) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+function normalizeMediaZipEntryPath(entryName: string): string | null {
+  const normalized = entryName.replace(/\\/g, '/').replace(/^\/+/, '');
+  if (!normalized || normalized.endsWith('/')) return null;
+  if (normalized.includes('..')) return null;
+
+  let relative = normalized;
+  if (relative.startsWith('uploads/')) relative = relative.slice('uploads/'.length);
+  if (!relative.includes('/')) relative = `people/${path.basename(relative)}`;
+
+  const ext = path.extname(relative).toLowerCase();
+  if (!ALLOWED_MEDIA_EXTENSIONS.has(ext)) return null;
+
+  const parts = relative.split('/').filter(Boolean);
+  if (parts.length === 0 || parts.some((part) => part === '.' || part === '..')) return null;
+
+  return parts.join('/');
+}
+
+function importMultimediaZip(zipPath: string): number {
+  const zip = new AdmZip(zipPath);
+  let imported = 0;
+
+  for (const entry of zip.getEntries()) {
+    if (entry.isDirectory) continue;
+    const relativePath = normalizeMediaZipEntryPath(entry.entryName);
+    if (!relativePath) continue;
+
+    const destination = path.join(uploadsRoot, relativePath);
+    const destinationDir = path.dirname(destination);
+    const relativeToUploads = path.relative(uploadsRoot, destination);
+    if (!relativeToUploads || relativeToUploads.startsWith('..') || path.isAbsolute(relativeToUploads)) {
+      continue;
+    }
+
+    fs.mkdirSync(destinationDir, { recursive: true });
+    fs.writeFileSync(destination, entry.getData());
+    imported += 1;
+  }
+
+  return imported;
 }
 
 function sanitizeKeptPhotoUrl(value: unknown): string {
@@ -869,8 +946,7 @@ app.get('/admin', requireAuth, (req, res) => {
 });
 
 app.get('/admin/actividades', requireAuth, (_req, res) => {
-  const activities = db.prepare('SELECT * FROM activities ORDER BY activity_date DESC, activity_time DESC, name ASC').all() as any[];
-  res.render('admin-activities', { activities });
+  res.render('admin-activities', { activities: listActivitiesWithPeople() });
 });
 
 app.get('/admin/personas', requireAuth, (req, res) => {
@@ -958,7 +1034,7 @@ app.post('/admin/personas/:id/delete', requireAuth, (req, res) => {
 
 app.get('/admin/ajustes', requireAuth, (_req, res) => {
   const roles = listMusicalRoles();
-  res.render('admin-settings', { roles });
+  res.render('admin-settings', { roles, multimediaCount: countMultimediaFiles() });
 });
 
 app.get('/admin/ajustes/roles/nuevo', requireAuth, (_req, res) => {
@@ -1151,12 +1227,7 @@ app.post('/admin/actividades/:id/delete', requireAuth, (req, res) => {
 });
 
 app.get('/actividades', (_req, res) => {
-  const activities = (db.prepare('SELECT * FROM activities ORDER BY activity_date DESC, activity_time DESC, name ASC').all() as any[])
-    .map((activity) => ({
-      ...activity,
-      people: getActivityPeoplePreview(activity.id),
-    }));
-  res.render('activities', { activities });
+  res.render('activities', { activities: listActivitiesWithPeople() });
 });
 
 app.get('/actividades/:slug', (req, res) => {
@@ -1239,12 +1310,12 @@ app.post('/admin/songs/:slug/delete', requireAuth, (req, res) => {
   return flashRedirect(req, res, '/admin', 'success', 'Canción eliminada correctamente');
 });
 
-// ── Database Backup Routes ──
+// ── Backup & multimedia Routes ──
 
-app.get('/admin/export', requireAuth, (req, res) => {
-  const dbPath = path.join(__dirname, '..', 'data', 'setlists.db');
+app.get('/admin/export', requireAuth, (_req, res) => {
+  const dbPath = path.join(dataRoot, 'setlists.db');
   if (!fs.existsSync(dbPath)) {
-    return flashRedirect(req, res, '/admin', 'error', 'Base de datos no encontrada');
+    return flashRedirect(_req, res, '/admin/ajustes', 'error', 'Base de datos no encontrada');
   }
   try {
     db.pragma('wal_checkpoint(TRUNCATE)');
@@ -1255,21 +1326,21 @@ app.get('/admin/export', requireAuth, (req, res) => {
   res.download(dbPath, `setlists-backup-${dateStr}.db`);
 });
 
-app.post('/admin/import', requireAuth, upload.single('database'), (req, res) => {
+app.post('/admin/import', requireAuth, backupUpload.single('database'), (req, res) => {
   if (!req.file) {
-    return flashRedirect(req, res, '/admin', 'error', 'No se seleccionó ningún archivo');
+    return flashRedirect(req, res, '/admin/ajustes', 'error', 'No se seleccionó ningún archivo');
   }
-  const dbPath = path.join(__dirname, '..', 'data', 'setlists.db');
+  const dbPath = path.join(dataRoot, 'setlists.db');
   const uploadedPath = req.file.path;
   const validExts = ['.db', '.sqlite', '.sqlite3'];
   const ext = path.extname(req.file.originalname).toLowerCase();
   if (!validExts.includes(ext)) {
     fs.unlinkSync(uploadedPath);
-    return flashRedirect(req, res, '/admin', 'error', 'El archivo debe tener extensión .db, .sqlite o .sqlite3');
+    return flashRedirect(req, res, '/admin/ajustes', 'error', 'El archivo debe tener extensión .db, .sqlite o .sqlite3');
   }
   if (req.file.size > 50 * 1024 * 1024) {
     fs.unlinkSync(uploadedPath);
-    return flashRedirect(req, res, '/admin', 'error', 'El archivo es demasiado grande (máximo 50MB)');
+    return flashRedirect(req, res, '/admin/ajustes', 'error', 'El archivo es demasiado grande (máximo 50MB)');
   }
   try {
     const testDb = require('better-sqlite3')(uploadedPath);
@@ -1278,7 +1349,7 @@ app.post('/admin/import', requireAuth, upload.single('database'), (req, res) => 
     if (tables.length < 2) {
       testDb.close();
       fs.unlinkSync(uploadedPath);
-      return flashRedirect(req, res, '/admin', 'error', 'El archivo no es una base de datos válida (debe contener las tablas songs y users)');
+      return flashRedirect(req, res, '/admin/ajustes', 'error', 'El archivo no es una base de datos válida (debe contener las tablas songs y users)');
     }
     testDb.close();
     db.close();
@@ -1287,13 +1358,63 @@ app.post('/admin/import', requireAuth, upload.single('database'), (req, res) => 
     try { fs.unlinkSync(dbPath + '-shm'); } catch {}
     fs.unlinkSync(uploadedPath);
     db = openDatabase();
-    return flashRedirect(req, res, '/admin', 'success', 'Base de datos importada correctamente. Reinicia el servidor para que los cambios surtan efecto completo.');
+    return flashRedirect(req, res, '/admin/ajustes', 'success', 'Base de datos importada correctamente. Reinicia el servidor para que los cambios surtan efecto completo.');
   } catch (err) {
     try { fs.unlinkSync(uploadedPath); } catch {}
     try {
       db = openDatabase();
     } catch {}
-    return flashRedirect(req, res, '/admin', 'error', 'Error al importar: ' + ((err as Error).message || 'desconocido'));
+    return flashRedirect(req, res, '/admin/ajustes', 'error', 'Error al importar: ' + ((err as Error).message || 'desconocido'));
+  }
+});
+
+app.get('/admin/ajustes/multimedia/export', requireAuth, (req, res) => {
+  if (countMultimediaFiles() === 0) {
+    return flashRedirect(req, res, '/admin/ajustes', 'error', 'No hay archivos multimedia para exportar');
+  }
+
+  try {
+    const zip = new AdmZip();
+    zip.addLocalFolder(uploadsRoot, 'uploads');
+    const dateStr = new Date().toISOString().split('T')[0];
+    const buffer = zip.toBuffer();
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="multimedia-backup-${dateStr}.zip"`);
+    res.setHeader('Content-Length', String(buffer.length));
+    return res.send(buffer);
+  } catch (err) {
+    return flashRedirect(req, res, '/admin/ajustes', 'error', 'Error al exportar multimedia: ' + ((err as Error).message || 'desconocido'));
+  }
+});
+
+app.post('/admin/ajustes/multimedia/import', requireAuth, backupUpload.single('multimedia'), (req, res) => {
+  if (!req.file) {
+    return flashRedirect(req, res, '/admin/ajustes', 'error', 'No se seleccionó ningún archivo');
+  }
+
+  const uploadedPath = req.file.path;
+  const ext = path.extname(req.file.originalname).toLowerCase();
+  if (ext !== '.zip') {
+    try { fs.unlinkSync(uploadedPath); } catch {}
+    return flashRedirect(req, res, '/admin/ajustes', 'error', 'El archivo debe ser un ZIP (.zip)');
+  }
+
+  try {
+    const imported = importMultimediaZip(uploadedPath);
+    try { fs.unlinkSync(uploadedPath); } catch {}
+    if (imported === 0) {
+      return flashRedirect(req, res, '/admin/ajustes', 'error', 'No se encontraron imágenes válidas en el ZIP');
+    }
+    return flashRedirect(
+      req,
+      res,
+      '/admin/ajustes',
+      'success',
+      `Multimedia importada correctamente (${imported} archivo${imported === 1 ? '' : 's'})`
+    );
+  } catch (err) {
+    try { fs.unlinkSync(uploadedPath); } catch {}
+    return flashRedirect(req, res, '/admin/ajustes', 'error', 'Error al importar multimedia: ' + ((err as Error).message || 'desconocido'));
   }
 });
 

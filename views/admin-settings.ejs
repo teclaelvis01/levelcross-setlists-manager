@@ -1,6 +1,8 @@
 <%
   const base = typeof baseUrl !== 'undefined' ? baseUrl : '';
   const safeRoles = typeof roles !== 'undefined' ? roles : [];
+  const mediaCount = typeof multimediaCount !== 'undefined' ? multimediaCount : 0;
+  const rolesOpen = safeRoles.length === 0;
 %>
 
 <%- include('partials/head') %>
@@ -8,33 +10,73 @@
 <div class="page-header">
   <div>
     <h1>Ajustes</h1>
-    <p class="page-subtitle">Configura los roles musicales del ministerio</p>
-  </div>
-  <div class="header-actions">
-    <a href="<%= base %>/admin/ajustes/roles/nuevo" class="btn btn-primary">+ Nuevo rol</a>
+    <p class="page-subtitle">Roles, copias de seguridad y multimedia</p>
   </div>
 </div>
 
 <%- include('partials/admin-nav', { adminSection: 'settings' }) %>
 
-<section class="section-card">
-  <h2>Roles musicales</h2>
-  <p class="help-text">Estos roles se usan al crear personas y al asignarlas a actividades.</p>
+<details class="settings-panel"<%= rolesOpen ? ' open' : '' %>>
+  <summary class="settings-panel__summary">
+    <div class="settings-panel__heading">
+      <h2>Roles musicales</h2>
+      <p class="help-text">Usados al crear personas y asignarlas a actividades.</p>
+    </div>
+    <span class="settings-panel__badge"><%= safeRoles.length %></span>
+  </summary>
 
-  <% if (safeRoles.length === 0) { %>
-    <div class="empty-state compact">
-      <p>No hay roles creados aún</p>
-      <a href="<%= base %>/admin/ajustes/roles/nuevo" class="btn btn-primary">+ Crear primer rol</a>
-    </div>
-  <% } else { %>
-    <div class="role-list admin-list">
-      <% safeRoles.forEach(roleItem => { %>
-        <a href="<%= base %>/admin/ajustes/roles/<%= roleItem.id %>/editar" class="role-card admin-entity-card person-card--link">
-          <h3 class="admin-entity-card__title"><%= roleItem.name %></h3>
-        </a>
-      <% }) %>
-    </div>
-  <% } %>
+  <div class="settings-panel__body">
+    <% if (safeRoles.length === 0) { %>
+      <div class="empty-state compact">
+        <p>No hay roles creados aún</p>
+        <a href="<%= base %>/admin/ajustes/roles/nuevo" class="btn btn-primary">+ Crear primer rol</a>
+      </div>
+    <% } else { %>
+      <div class="role-chip-list">
+        <% safeRoles.forEach(roleItem => { %>
+          <a href="<%= base %>/admin/ajustes/roles/<%= roleItem.id %>/editar" class="role-chip">
+            <%= roleItem.name %>
+          </a>
+        <% }) %>
+        <a href="<%= base %>/admin/ajustes/roles/nuevo" class="role-chip role-chip--add">+ Nuevo</a>
+      </div>
+    <% } %>
+  </div>
+</details>
+
+<section class="section-card settings-backup">
+  <h2>Backup de base de datos</h2>
+  <p class="help-text">Exporta o importa la base de datos SQLite completa (canciones, personas, actividades y usuarios).</p>
+  <div class="backup-actions">
+    <a href="<%= base %>/admin/export" class="btn btn-primary">⬇️ Exportar DB</a>
+    <form action="<%= base %>/admin/import" method="POST" enctype="multipart/form-data" class="inline-form">
+      <label class="btn btn-secondary import-label">
+        📤 Importar DB
+        <input type="file" name="database" accept=".db,.sqlite,.sqlite3" required hidden onchange="this.form.submit()">
+      </label>
+    </form>
+  </div>
+</section>
+
+<section class="section-card settings-backup">
+  <h2>Multimedia</h2>
+  <p class="help-text">
+    Exporta o importa las fotos de personas y otros archivos subidos.
+    <% if (mediaCount > 0) { %>
+      Actualmente hay <%= mediaCount %> archivo<%= mediaCount === 1 ? '' : 's' %>.
+    <% } else { %>
+      No hay archivos multimedia todavía.
+    <% } %>
+  </p>
+  <div class="backup-actions">
+    <a href="<%= base %>/admin/ajustes/multimedia/export" class="btn btn-primary<%= mediaCount === 0 ? ' is-disabled' : '' %>"<%= mediaCount === 0 ? ' aria-disabled="true" tabindex="-1"' : '' %>>⬇️ Exportar multimedia</a>
+    <form action="<%= base %>/admin/ajustes/multimedia/import" method="POST" enctype="multipart/form-data" class="inline-form">
+      <label class="btn btn-secondary import-label">
+        📤 Importar multimedia
+        <input type="file" name="multimedia" accept=".zip,application/zip" required hidden onchange="this.form.submit()">
+      </label>
+    </form>
+  </div>
 </section>
 
 <%- include('partials/foot') %>

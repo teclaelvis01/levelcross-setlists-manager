@@ -257,6 +257,124 @@ main {
   border-radius: var(--radius);
 }
 
+.settings-panel {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 16px;
+  overflow: hidden;
+}
+
+.settings-panel__summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 18px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.settings-panel__summary::-webkit-details-marker {
+  display: none;
+}
+
+.settings-panel__summary::after {
+  content: '';
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+  border-right: 2px solid var(--text-muted);
+  border-bottom: 2px solid var(--text-muted);
+  transform: rotate(45deg);
+  transition: transform 0.15s ease;
+  margin-top: -4px;
+}
+
+.settings-panel[open] > .settings-panel__summary::after {
+  transform: rotate(225deg);
+  margin-top: 4px;
+}
+
+.settings-panel__heading {
+  min-width: 0;
+  flex: 1;
+}
+
+.settings-panel__heading h2 {
+  font-size: 1rem;
+  font-weight: 650;
+  margin: 0 0 4px;
+}
+
+.settings-panel__heading .help-text {
+  margin: 0;
+}
+
+.settings-panel__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.settings-panel__body {
+  padding: 0 18px 18px;
+  border-top: 1px solid transparent;
+}
+
+.settings-panel[open] > .settings-panel__body {
+  border-top-color: var(--border);
+  padding-top: 14px;
+}
+
+.role-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.role-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--text);
+  text-decoration: none;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.2;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.role-chip:hover {
+  border-color: var(--primary);
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.role-chip--add {
+  color: var(--text-muted);
+  border-style: dashed;
+  font-weight: 600;
+}
+
+.role-chip--add:hover {
+  color: var(--primary);
+}
+
 .section-card {
   background: var(--bg-card);
   border: 1px solid var(--border);
@@ -517,6 +635,14 @@ body.photo-crop-open {
     width: min(280px, calc(100vw - 68px));
     height: min(280px, calc(100vw - 68px));
   }
+}
+
+.section-card + .section-card {
+  margin-top: 16px;
+}
+
+.settings-backup .backup-actions {
+  margin-top: 14px;
 }
 
 .admin-backup {
@@ -1222,9 +1348,73 @@ body.photo-crop-open {
 .activity-card,
 .person-card {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+
+.activity-card__body {
+  min-width: 0;
+  flex: 1;
+}
+
+.person-avatar-row--stack {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  margin: 0;
+}
+
+.person-avatar-row--stack .person-avatar-item {
+  width: 34px;
+  height: 34px;
+  margin-left: -10px;
+  position: relative;
+  z-index: 1;
+  border: 2px solid var(--bg-card);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+
+.person-avatar-row--stack .person-avatar-item:first-child {
+  margin-left: 0;
+}
+
+.person-avatar-row--stack .person-avatar-item:nth-child(1) { z-index: 6; }
+.person-avatar-row--stack .person-avatar-item:nth-child(2) { z-index: 5; }
+.person-avatar-row--stack .person-avatar-item:nth-child(3) { z-index: 4; }
+.person-avatar-row--stack .person-avatar-item:nth-child(4) { z-index: 3; }
+.person-avatar-row--stack .person-avatar-item:nth-child(5) { z-index: 2; }
+.person-avatar-row--stack .person-avatar-item:nth-child(6) { z-index: 1; }
+
+.person-avatar-row--stack .person-avatar,
+.person-avatar-row--stack .person-avatar--fallback {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.person-avatar-row--stack .person-avatar--fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.person-avatar-item--more .person-avatar--fallback {
+  font-size: 0.65rem;
+}
+
+@media (max-width: 560px) {
+  .activity-card {
+    flex-wrap: wrap;
+  }
+
+  .person-avatar-row--stack {
+    width: 100%;
+  }
 }
 
 .activity-card--link {

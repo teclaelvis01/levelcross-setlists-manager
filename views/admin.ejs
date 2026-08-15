@@ -82,18 +82,4 @@
   <% } %>
 <% } %>
 
-<details class="admin-backup">
-  <summary>Backup de base de datos</summary>
-  <p class="backup-desc">Exporta o importa la base de datos SQLite completa.</p>
-  <div class="backup-actions">
-    <a href="<%= base %>/admin/export" class="btn btn-primary">⬇️ Exportar DB</a>
-    <form action="<%= base %>/admin/import" method="POST" enctype="multipart/form-data" class="inline-form">
-      <label class="btn btn-secondary import-label">
-        📤 Importar DB
-        <input type="file" name="database" accept=".db,.sqlite,.sqlite3" required hidden onchange="this.form.submit()">
-      </label>
-    </form>
-  </div>
-</details>
-
 <%- include('partials/foot') %>

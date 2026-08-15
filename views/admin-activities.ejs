@@ -1,6 +1,7 @@
 <%
   const base = typeof baseUrl !== 'undefined' ? baseUrl : '';
   const safeActivities = typeof activities !== 'undefined' ? activities : [];
+  const maxAvatars = 5;
 %>
 
 <%- include('partials/head') %>
@@ -24,7 +25,11 @@
   </div>
 <% } else { %>
   <div class="activity-list admin-list">
-    <% safeActivities.forEach(activity => { %>
+    <% safeActivities.forEach(activity => {
+      const people = activity.people || [];
+      const visiblePeople = people.slice(0, maxAvatars);
+      const extraCount = Math.max(0, people.length - maxAvatars);
+    %>
       <a href="<%= base %>/admin/actividades/<%= activity.id %>/editar" class="activity-card admin-entity-card activity-card--link">
         <div class="activity-card__body">
           <h3 class="admin-entity-card__title"><%= activity.name %></h3>
@@ -38,6 +43,26 @@
             <p class="activity-card__detail"><%= activity.detail.length > 120 ? activity.detail.slice(0, 120) + '...' : activity.detail %></p>
           <% } %>
         </div>
+        <% if (visiblePeople.length > 0) { %>
+          <div class="person-avatar-row person-avatar-row--stack" aria-label="<%= people.length %> participante<%= people.length === 1 ? '' : 's' %>">
+            <% visiblePeople.forEach(person => {
+              const initial = (person.name || 'P').charAt(0).toUpperCase();
+            %>
+              <div class="person-avatar-item" title="<%= person.name %>">
+                <% if (person.photo_url) { %>
+                  <img src="<%= photoSrc(person.photo_url) %>" alt="<%= person.name %>" class="person-avatar" referrerpolicy="no-referrer">
+                <% } else { %>
+                  <span class="person-avatar person-avatar--fallback"><%= initial %></span>
+                <% } %>
+              </div>
+            <% }) %>
+            <% if (extraCount > 0) { %>
+              <div class="person-avatar-item person-avatar-item--more" title="+<%= extraCount %> más">
+                <span class="person-avatar person-avatar--fallback">+<%= extraCount %></span>
+              </div>
+            <% } %>
+          </div>
+        <% } %>
       </a>
     <% }) %>
   </div>
