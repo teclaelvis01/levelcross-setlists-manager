@@ -52,11 +52,16 @@
     <form
       action="<%= base %>/admin/ajustes/roles/<%= role.id %>/delete"
       method="POST"
-      onsubmit="return confirm(<%= JSON.stringify('¿Eliminar el rol «' + role.name + '»? Se quitará de personas y actividades.') %>)"
+      data-confirm-delete
+      data-confirm-name="<%= role.name %>"
+      data-confirm-title="Eliminar rol"
+      data-confirm-message="Al eliminar este rol se quitará de todas las personas y actividades donde esté asignado. Esta acción no se puede deshacer."
+      data-confirm-submit-label="Eliminar rol"
     >
       <button type="submit" class="btn btn-danger">Eliminar rol</button>
     </form>
   </section>
+  <script src="<%= base %>/confirm-delete.js"></script>
 <% } %>
 
 <%- include('partials/foot') %>

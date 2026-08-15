@@ -2,9 +2,6 @@
   const base = typeof baseUrl !== 'undefined' ? baseUrl : '';
   const isEdit = !!(activity && activity.id);
   const errors = typeof fieldErrors !== 'undefined' && fieldErrors ? fieldErrors : {};
-  const deleteConfirm = isEdit
-    ? '¿Eliminar la actividad «' + activity.name + '»? Se borrará de forma permanente y no se puede deshacer.'
-    : '';
 %>
 
 <%- include('partials/head') %>
@@ -328,10 +325,19 @@
   <section class="danger-zone">
     <h2>Zona de peligro</h2>
     <p>La actividad se eliminará de forma permanente, junto con sus canciones y personas asignadas. Esta acción no se puede deshacer.</p>
-    <form action="<%= base %>/admin/actividades/<%= activity.id %>/delete" method="POST" onsubmit="return confirm(<%= JSON.stringify(deleteConfirm) %>)">
+    <form
+      action="<%= base %>/admin/actividades/<%= activity.id %>/delete"
+      method="POST"
+      data-confirm-delete
+      data-confirm-name="<%= activity.name %>"
+      data-confirm-title="Eliminar actividad"
+      data-confirm-message="La actividad se eliminará de forma permanente, junto con sus canciones y personas asignadas. Esta acción no se puede deshacer."
+      data-confirm-submit-label="Eliminar actividad"
+    >
       <button type="submit" class="btn btn-danger">Eliminar actividad</button>
     </form>
   </section>
+  <script src="<%= base %>/confirm-delete.js"></script>
 <% } %>
 
 <script src="<%= base %>/list-filter.js"></script>

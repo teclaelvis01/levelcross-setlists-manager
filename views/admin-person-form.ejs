@@ -105,11 +105,16 @@
     <form
       action="<%= base %>/admin/personas/<%= person.id %>/delete"
       method="POST"
-      onsubmit="return confirm(<%= JSON.stringify('¿Eliminar a ' + person.name + '? Seguirá visible en actividades pasadas.') %>)"
+      data-confirm-delete
+      data-confirm-name="<%= person.name %>"
+      data-confirm-title="Eliminar persona"
+      data-confirm-message="La persona dejará de aparecer en el listado y no se podrá asignar a actividades nuevas, pero seguirá visible en las actividades donde ya participó."
+      data-confirm-submit-label="Eliminar persona"
     >
       <button type="submit" class="btn btn-danger">Eliminar persona</button>
     </form>
   </section>
+  <script src="<%= base %>/confirm-delete.js"></script>
 <% } %>
 
 <div class="photo-crop-modal" data-photo-crop-modal hidden>

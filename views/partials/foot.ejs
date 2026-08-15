@@ -1,6 +1,9 @@
 </main>
   <footer>
-    <p>LevelCross Setlists</p>
+    <p>
+      LevelCross Setlists
+      <a href="<%= (typeof baseUrl !== 'undefined' ? baseUrl : '') %>/admin" class="footer-admin">Admin</a>
+    </p>
   </footer>
 
   <% if (typeof flash !== 'undefined' && flash && flash.message) { %>

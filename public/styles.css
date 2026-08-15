@@ -139,6 +139,23 @@ nav {
   background: rgba(239, 68, 68, 0.1);
 }
 
+.btn-danger-solid {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+}
+
+.btn-danger-solid:hover:not(:disabled) {
+  background: var(--danger-hover);
+  border-color: var(--danger-hover);
+  color: #fff;
+}
+
+.btn-danger-solid:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .btn-icon {
   padding: 8px;
   border: none;
@@ -1867,6 +1884,95 @@ body.photo-crop-open {
   line-height: 1.5;
 }
 
+body.confirm-delete-open {
+  overflow: hidden;
+}
+
+.confirm-delete-modal[hidden] {
+  display: none !important;
+}
+
+.confirm-delete-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 12vh 16px 16px;
+}
+
+.confirm-delete-modal__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.72);
+}
+
+.confirm-delete-modal__dialog {
+  position: relative;
+  z-index: 1;
+  width: min(100%, 440px);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+}
+
+.confirm-delete-modal__header h2 {
+  font-size: 1.05rem;
+  margin-bottom: 8px;
+}
+
+.confirm-delete-modal__header p {
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  line-height: 1.5;
+  margin-bottom: 16px;
+}
+
+.confirm-delete-modal__body {
+  margin-bottom: 18px;
+}
+
+.confirm-delete-modal__body label {
+  display: block;
+  font-size: 0.875rem;
+  color: var(--text);
+  margin-bottom: 8px;
+  line-height: 1.45;
+}
+
+.confirm-delete-modal__name {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-weight: 600;
+  color: var(--text);
+  word-break: break-word;
+}
+
+.confirm-delete-modal__body input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.875rem;
+}
+
+.confirm-delete-modal__body input:focus {
+  outline: none;
+  border-color: var(--danger);
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.18);
+}
+
+.confirm-delete-modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .activity-card__detail,
 .person-card__role {
   margin-top: 6px;
@@ -2554,6 +2660,19 @@ footer {
   font-size: 0.75rem;
   border-top: 1px solid var(--border);
   margin-top: 48px;
+}
+
+.footer-admin {
+  color: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  text-decoration: none;
+  margin-left: 0.35em;
+}
+
+.footer-admin:hover {
+  color: inherit;
+  text-decoration: underline;
 }
 
 /* Responsive */
