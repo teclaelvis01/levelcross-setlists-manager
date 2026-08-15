@@ -364,6 +364,7 @@ main {
 .role-chip {
   display: inline-flex;
   align-items: center;
+  gap: 6px;
   padding: 8px 12px;
   border: 1px solid var(--border);
   border-radius: 999px;
@@ -380,6 +381,18 @@ main {
   border-color: var(--primary);
   background: var(--bg-hover);
   color: var(--text);
+}
+
+.role-chip__meta {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.role-chip__meta::before {
+  content: '·';
+  margin-right: 6px;
+  color: var(--text-muted);
 }
 
 .role-chip--add {
@@ -979,7 +992,8 @@ body.photo-crop-open {
 }
 
 .form-group input,
-.form-group textarea {
+.form-group textarea,
+.form-group select {
   width: 100%;
   padding: 10px 14px;
   border: 1px solid var(--border);
@@ -992,8 +1006,17 @@ body.photo-crop-open {
   transition: border-color 0.15s ease;
 }
 
+.form-group select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%23888' d='M1.4 0.6L6 5.2 10.6.6 12 2 6 8 0 2z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+  padding-right: 36px;
+}
+
 .form-group input:focus,
-.form-group textarea:focus {
+.form-group textarea:focus,
+.form-group select:focus {
   border-color: var(--primary);
 }
 
@@ -1002,7 +1025,8 @@ body.photo-crop-open {
 }
 
 .form-group.is-invalid input,
-.form-group.is-invalid textarea {
+.form-group.is-invalid textarea,
+.form-group.is-invalid select {
   border-color: var(--danger);
   box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.25);
 }
@@ -1239,10 +1263,29 @@ body.photo-crop-open {
   margin-bottom: 28px;
 }
 
+.activity-people-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.activity-people-group__title {
+  margin: 0 0 8px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
 .activity-people-chips {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.activity-people-chips--reorder {
+  min-height: 42px;
 }
 
 .activity-person-chip {
@@ -1255,6 +1298,71 @@ body.photo-crop-open {
   border: 1px solid var(--border);
   border-radius: 999px;
 }
+
+.activity-person-chip--draggable {
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.activity-person-chip--draggable:active {
+  cursor: grabbing;
+}
+
+.activity-person-chip.is-dragging {
+  opacity: 0.45;
+}
+
+.activity-person-chip.is-drag-over {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.35);
+}
+
+.people-order-details {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.people-order-details__summary {
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text);
+  list-style: none;
+}
+
+.people-order-details__summary::-webkit-details-marker {
+  display: none;
+}
+
+.people-order-details__summary::before {
+  content: '';
+  display: inline-block;
+  width: 0.45em;
+  height: 0.45em;
+  margin-right: 8px;
+  border-right: 2px solid var(--text-muted);
+  border-bottom: 2px solid var(--text-muted);
+  transform: rotate(-45deg);
+  vertical-align: 0.15em;
+  transition: transform 0.15s ease;
+}
+
+.people-order-details[open] > .people-order-details__summary::before {
+  transform: rotate(45deg);
+  vertical-align: 0.05em;
+}
+
+.people-order-details .help-text {
+  margin-top: 8px;
+  margin-bottom: 12px;
+}
+
+.people-order-details .activity-people-groups {
+  margin-top: 4px;
+}
+
 
 .activity-person-chip__photo {
   width: 32px;
@@ -2097,6 +2205,34 @@ body.confirm-delete-open {
   box-shadow: inset 0 0 0 1px rgba(99, 102, 241, 0.14);
 }
 
+.category-tag-add {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 10px;
+}
+
+.category-tag-add input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  color: var(--text);
+  font-size: 0.875rem;
+  font-family: inherit;
+  outline: none;
+}
+
+.category-tag-add input:focus {
+  border-color: var(--primary);
+}
+
+.chip-selector--single {
+  margin-top: 0;
+}
+
 .person-card__content {
   display: flex;
   align-items: center;
@@ -2198,10 +2334,23 @@ body.confirm-delete-open {
 }
 
 .setlist-item--person {
-  cursor: default;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+  align-items: center;
+}
+
+.setlist-item--person:active {
+  cursor: grabbing;
+}
+
+.setlist-item--person .chip-option,
+.setlist-item--person input,
+.setlist-item--person button,
+.setlist-item--person label {
+  cursor: pointer;
   user-select: auto;
   touch-action: auto;
-  align-items: center;
 }
 
 .setlist-item__handle {

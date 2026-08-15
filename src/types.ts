@@ -50,6 +50,7 @@ export interface ActivityPersonRole {
 export interface MusicalRole {
   id: number;
   name: string;
+  category: string;
   position: number;
   created_at: string;
 }

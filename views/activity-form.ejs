@@ -56,7 +56,7 @@
       const selectedPeople = typeof assignedPeople !== 'undefined' && assignedPeople ? assignedPeople : [];
       const selectedPeopleIds = selectedPeople.map((person) => person.id);
     %>
-      <p class="help-text">Añade personas desde la lista. Elige qué roles cumplirán en esta actividad.</p>
+      <p class="help-text">Añade personas desde la lista. Arrastra las asignadas para definir el orden. Elige qué roles cumplirán en esta actividad.</p>
 
       <div class="setlist-builder" data-people-builder>
         <div class="setlist-ordered-wrap">
@@ -78,6 +78,7 @@
             %>
               <li
                 class="setlist-item setlist-item--person"
+                draggable="true"
                 data-person-item
                 data-person-id="<%= person.id %>"
                 data-person-name="<%= person.name %>"
@@ -85,8 +86,9 @@
                 data-person-initial="<%= initial %>"
                 data-person-roles="<%= JSON.stringify(availableRoles) %>"
               >
+                <span class="setlist-item__handle" aria-hidden="true" title="Arrastrar">⋮⋮</span>
                 <% if (photo) { %>
-                  <img src="<%= photo %>" alt="" class="setlist-item__avatar" referrerpolicy="no-referrer">
+                  <img src="<%= photo %>" alt="" class="setlist-item__avatar" referrerpolicy="no-referrer" draggable="false">
                 <% } else { %>
                   <span class="setlist-item__avatar setlist-item__avatar--fallback" aria-hidden="true"><%= initial %></span>
                 <% } %>
@@ -174,9 +176,10 @@
       </div>
 
       <template data-people-item-template>
-        <li class="setlist-item setlist-item--person" data-person-item>
+        <li class="setlist-item setlist-item--person" draggable="true" data-person-item>
+          <span class="setlist-item__handle" aria-hidden="true" title="Arrastrar">⋮⋮</span>
           <span class="setlist-item__avatar setlist-item__avatar--fallback is-hidden" data-avatar-fallback aria-hidden="true"></span>
-          <img src="" alt="" class="setlist-item__avatar is-hidden" data-avatar-img referrerpolicy="no-referrer">
+          <img src="" alt="" class="setlist-item__avatar is-hidden" data-avatar-img referrerpolicy="no-referrer" draggable="false">
           <div class="setlist-item__info">
             <strong data-name></strong>
             <div class="chip-selector setlist-item__roles" data-person-roles hidden></div>
@@ -520,6 +523,8 @@
     const roleTemplate = document.querySelector('[data-people-role-template]');
     if (!assignedList || !library || !itemTemplate || !poolTemplate || !roleTemplate) return;
 
+    let dragItem = null;
+
     function parseRoles(raw) {
       try {
         const parsed = JSON.parse(raw || '[]');
@@ -579,6 +584,7 @@
       node.dataset.personPhoto = photo || '';
       node.dataset.personInitial = initial || 'P';
       node.dataset.personRoles = JSON.stringify(roles || []);
+      node.setAttribute('draggable', 'true');
 
       setAvatar(node, photo, initial || 'P');
       node.querySelector('[data-name]').textContent = name;
@@ -670,7 +676,45 @@
           removePerson(item);
         });
       }
+
+      item.addEventListener('dragstart', (event) => {
+        if (event.target.closest('input, label, button, a')) {
+          event.preventDefault();
+          return;
+        }
+        dragItem = item;
+        item.classList.add('is-dragging');
+        if (event.dataTransfer) {
+          event.dataTransfer.effectAllowed = 'move';
+          event.dataTransfer.setData('text/plain', item.dataset.personId || '');
+        }
+      });
+
+      item.addEventListener('dragend', () => {
+        item.classList.remove('is-dragging');
+        assignedList.querySelectorAll('.is-drag-over').forEach((el) => el.classList.remove('is-drag-over'));
+        dragItem = null;
+      });
+
+      item.addEventListener('dragover', (event) => {
+        event.preventDefault();
+        if (!dragItem || dragItem === item) return;
+        const rect = item.getBoundingClientRect();
+        const before = event.clientY < rect.top + rect.height / 2;
+        assignedList.querySelectorAll('.is-drag-over').forEach((el) => el.classList.remove('is-drag-over'));
+        item.classList.add('is-drag-over');
+        if (before) assignedList.insertBefore(dragItem, item);
+        else assignedList.insertBefore(dragItem, item.nextSibling);
+      });
+
+      item.addEventListener('drop', (event) => {
+        event.preventDefault();
+      });
     }
+
+    assignedList.addEventListener('dragover', (event) => {
+      event.preventDefault();
+    });
 
     library.addEventListener('click', (event) => {
       const button = event.target.closest('[data-person-add]');

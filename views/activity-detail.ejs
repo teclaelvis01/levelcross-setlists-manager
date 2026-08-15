@@ -5,6 +5,7 @@
   const returnPath = base + '/actividades/' + activity.slug;
   const peopleCount = people ? people.length : 0;
   const songsCount = songs ? songs.length : 0;
+  const groups = typeof peopleGroups !== 'undefined' && Array.isArray(peopleGroups) ? peopleGroups : [];
 %>
 
 <%- include('partials/public-nav', { publicSection: 'activities' }) %>
@@ -46,33 +47,41 @@
         >
       </div>
 
-      <div class="activity-people-chips" data-list-filter-list>
-        <% people.forEach(person => {
-          const roles = person.activityRoles || person.roles || [];
-          const initial = (person.name || 'P').charAt(0).toUpperCase();
-          const roleText = roles.length ? roles.join(' · ') : 'Sin rol';
-          const filterText = [person.name].concat(roles).filter(Boolean).join(' ');
-        %>
-          <div
-            class="activity-person-chip"
-            title="<%= person.name %> — <%= roleText %>"
-            data-list-filter-item
-            data-filter-text="<%= filterText %>"
-          >
-            <% if (person.photo_url) { %>
-              <img
-                src="<%= photoSrc(person.photo_url) %>"
-                alt=""
-                class="activity-person-chip__photo"
-                referrerpolicy="no-referrer"
-              >
-            <% } else { %>
-              <span class="activity-person-chip__photo activity-person-chip__photo--fallback" aria-hidden="true"><%= initial %></span>
-            <% } %>
-            <span class="activity-person-chip__text">
-              <strong><%= person.name %></strong>
-              <small><%= roleText %></small>
-            </span>
+      <div class="activity-people-groups" data-list-filter-list>
+        <% groups.forEach((group) => { %>
+          <div class="activity-people-group" data-list-filter-group>
+            <h3 class="activity-people-group__title"><%= group.label %></h3>
+            <div class="activity-people-chips">
+              <% group.people.forEach(person => {
+                const roles = person.activityRoles || [];
+                const initial = (person.name || 'P').charAt(0).toUpperCase();
+                const roleText = roles.length ? roles.join(' · ') : 'Sin rol';
+                const filterText = [person.name].concat(roles).filter(Boolean).join(' ');
+              %>
+                <div
+                  class="activity-person-chip"
+                  title="<%= person.name %> — <%= roleText %>"
+                  data-list-filter-item
+                  data-person-id="<%= person.id %>"
+                  data-filter-text="<%= filterText %>"
+                >
+                  <% if (person.photo_url) { %>
+                    <img
+                      src="<%= photoSrc(person.photo_url) %>"
+                      alt=""
+                      class="activity-person-chip__photo"
+                      referrerpolicy="no-referrer"
+                    >
+                  <% } else { %>
+                    <span class="activity-person-chip__photo activity-person-chip__photo--fallback" aria-hidden="true"><%= initial %></span>
+                  <% } %>
+                  <span class="activity-person-chip__text">
+                    <strong><%= person.name %></strong>
+                    <small><%= roleText %></small>
+                  </span>
+                </div>
+              <% }) %>
+            </div>
           </div>
         <% }) %>
       </div>

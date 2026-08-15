@@ -95,6 +95,40 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     activity_id INTEGER NOT NULL,
     person_id INTEGER NOT NULL,
+    position INTEGER NOT NULL DEFAULT 0,
+    FOREIGN KEY(activity_id) REFERENCES activities(id) ON DELETE CASCADE,
+    FOREIGN KEY(person_id) REFERENCES people(id) ON DELETE CASCADE
+  )
+`);
+
+const hasActivityPeoplePositionCol = db
+  .prepare("SELECT COUNT(*) as count FROM pragma_table_info('activity_people') WHERE name = 'position'")
+  .get() as { count: number };
+if (hasActivityPeoplePositionCol.count === 0) {
+  db.exec(`ALTER TABLE activity_people ADD COLUMN position INTEGER NOT NULL DEFAULT 0`);
+  const activityIds = db.prepare('SELECT DISTINCT activity_id FROM activity_people').all() as Array<{ activity_id: number }>;
+  const updatePos = db.prepare('UPDATE activity_people SET position = ? WHERE id = ?');
+  for (const row of activityIds) {
+    const peopleRows = db.prepare(`
+      SELECT a_p.id
+      FROM activity_people a_p
+      JOIN people p ON p.id = a_p.person_id
+      WHERE a_p.activity_id = ?
+      ORDER BY p.name ASC, a_p.id ASC
+    `).all(row.activity_id) as Array<{ id: number }>;
+    peopleRows.forEach((personRow, index) => {
+      updatePos.run(index + 1, personRow.id);
+    });
+  }
+}
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS activity_person_category_order (
+    activity_id INTEGER NOT NULL,
+    category TEXT NOT NULL,
+    person_id INTEGER NOT NULL,
+    position INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (activity_id, category, person_id),
     FOREIGN KEY(activity_id) REFERENCES activities(id) ON DELETE CASCADE,
     FOREIGN KEY(person_id) REFERENCES people(id) ON DELETE CASCADE
   )
@@ -116,25 +150,90 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS musical_roles (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,
+    category TEXT NOT NULL DEFAULT 'Otros',
     position INTEGER NOT NULL DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )
 `);
 
-const defaultMusicalRoles = [
-  'Bajo',
-  'Guitarra eléctrica',
-  'Guitarra acústica',
-  'Batería',
-  'Voz principal',
-  'Voces',
-  'Técnico de sonido',
+function inferRoleCategory(name: string): string {
+  const normalized = name
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+
+  if (normalized.includes('sonido')) return 'Sonido';
+  if (
+    normalized.includes('voz') ||
+    normalized === 'voces' ||
+    normalized.includes('cantante') ||
+    normalized.includes('director')
+  ) {
+    return 'Cantantes';
+  }
+  if (
+    normalized.includes('bajo') ||
+    normalized.includes('guitarra') ||
+    normalized.includes('bater') ||
+    normalized.includes('teclado') ||
+    normalized.includes('piano') ||
+    normalized.includes('violin') ||
+    normalized.includes('sax') ||
+    normalized.includes('trompet') ||
+    normalized.includes('percusion') ||
+    normalized.includes('ukelele') ||
+    normalized.includes('ukulele')
+  ) {
+    return 'Músicos';
+  }
+  return 'Otros';
+}
+
+const hasMusicalRoleCategoryCol = db
+  .prepare("SELECT COUNT(*) as count FROM pragma_table_info('musical_roles') WHERE name = 'category'")
+  .get() as { count: number };
+if (hasMusicalRoleCategoryCol.count === 0) {
+  db.exec(`ALTER TABLE musical_roles ADD COLUMN category TEXT NOT NULL DEFAULT 'Otros'`);
+  const existingRoles = db.prepare('SELECT id, name FROM musical_roles').all() as Array<{ id: number; name: string }>;
+  const updateRoleCategory = db.prepare('UPDATE musical_roles SET category = ? WHERE id = ?');
+  for (const role of existingRoles) {
+    updateRoleCategory.run(inferRoleCategory(role.name), role.id);
+  }
+}
+
+// Migrate legacy slug categories (musicos/cantantes/…) to display labels.
+const legacyCategoryMap: Record<string, string> = {
+  musicos: 'Músicos',
+  cantantes: 'Cantantes',
+  sonido: 'Sonido',
+  otros: 'Otros',
+};
+const rolesWithLegacyCategory = db
+  .prepare('SELECT id, category FROM musical_roles')
+  .all() as Array<{ id: number; category: string }>;
+const updateLegacyCategory = db.prepare('UPDATE musical_roles SET category = ? WHERE id = ?');
+for (const role of rolesWithLegacyCategory) {
+  const key = String(role.category || '').trim().toLowerCase();
+  if (legacyCategoryMap[key] && role.category !== legacyCategoryMap[key]) {
+    updateLegacyCategory.run(legacyCategoryMap[key], role.id);
+  }
+}
+
+const defaultMusicalRoles: Array<{ name: string; category: string }> = [
+  { name: 'Bajo', category: 'Músicos' },
+  { name: 'Guitarra eléctrica', category: 'Músicos' },
+  { name: 'Guitarra acústica', category: 'Músicos' },
+  { name: 'Batería', category: 'Músicos' },
+  { name: 'Voz principal', category: 'Cantantes' },
+  { name: 'Voces', category: 'Cantantes' },
+  { name: 'Técnico de sonido', category: 'Sonido' },
 ];
 const musicalRoleCount = db.prepare('SELECT COUNT(*) as count FROM musical_roles').get() as { count: number };
 if (musicalRoleCount.count === 0) {
-  const insertRole = db.prepare('INSERT INTO musical_roles (name, position) VALUES (?, ?)');
-  defaultMusicalRoles.forEach((name, index) => {
-    insertRole.run(name, index + 1);
+  const insertRole = db.prepare('INSERT INTO musical_roles (name, category, position) VALUES (?, ?, ?)');
+  defaultMusicalRoles.forEach((role, index) => {
+    insertRole.run(role.name, role.category, index + 1);
   });
 }
 // Migration: add slug column if upgrading from a previous version

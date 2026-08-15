@@ -17,6 +17,8 @@ const isDev = process.env.NODE_ENV !== 'production';
 const SALT_ROUNDS = 10;
 const DEFAULT_SONGS_PER_PAGE = 12;
 const PAGE_SIZE_OPTIONS = [5, 10, 50];
+const DEFAULT_ROLE_CATEGORIES = ['Músicos', 'Cantantes', 'Sonido', 'Otros'];
+const MAX_ROLE_CATEGORY_LENGTH = 40;
 
 // Make baseUrl available to all views
 app.locals.baseUrl = BASE_URL;
@@ -240,16 +242,17 @@ function getActivityRelations(activityId: number) {
     ORDER BY a_s.position ASC, s.title ASC
   `).all(activityId) as Array<Song & { position: number }>;
   const people = (db.prepare(`
-    SELECT p.*
+    SELECT p.*, a_p.position as activity_position
     FROM activity_people a_p
     JOIN people p ON p.id = a_p.person_id
     WHERE a_p.activity_id = ?
-    ORDER BY p.name ASC
+    ORDER BY a_p.position ASC, p.name ASC
   `).all(activityId) as any[]).map((person) => {
     const availableRoles = getPersonRoles(person.id);
     const activityRoles = getActivityPersonRoles(activityId, person.id);
     return {
       ...person,
+      position: Number(person.activity_position) || 0,
       roles: availableRoles,
       activityRoles,
     };
@@ -284,15 +287,17 @@ function saveActivityPeople(activityId: number, personIds: number[], rolesByPers
     db.prepare('DELETE FROM activity_person_roles WHERE activity_id = ?').run(activityId);
     db.prepare('DELETE FROM activity_people WHERE activity_id = ?').run(activityId);
 
-    const insertPerson = db.prepare('INSERT INTO activity_people (activity_id, person_id) VALUES (?, ?)');
+    const insertPerson = db.prepare('INSERT INTO activity_people (activity_id, person_id, position) VALUES (?, ?, ?)');
     const insertRole = db.prepare('INSERT INTO activity_person_roles (activity_id, person_id, role) VALUES (?, ?, ?)');
     const personExists = db.prepare('SELECT id FROM people WHERE id = ?');
+    let position = 0;
 
     for (const personId of personIds) {
       if (!personExists.get(personId)) continue;
 
+      position += 1;
       const availableRoles = getPersonRoles(personId);
-      insertPerson.run(activityId, personId);
+      insertPerson.run(activityId, personId, position);
 
       const submitted = Object.prototype.hasOwnProperty.call(rolesByPerson, personId);
       const selectedRoles = (rolesByPerson[personId] || [])
@@ -307,6 +312,8 @@ function saveActivityPeople(activityId: number, personIds: number[], rolesByPers
         insertRole.run(activityId, personId, role);
       }
     }
+
+    db.prepare('DELETE FROM activity_person_category_order WHERE activity_id = ?').run(activityId);
   });
 
   save();
@@ -341,7 +348,7 @@ function getActivityPeoplePreview(activityId: number) {
     FROM activity_people a_p
     JOIN people p ON p.id = a_p.person_id
     WHERE a_p.activity_id = ? AND p.deleted_at IS NULL
-    ORDER BY p.name ASC
+    ORDER BY a_p.position ASC, p.name ASC
   `).all(activityId) as Array<{ id: number; name: string; photo_url: string }>;
 }
 
@@ -421,6 +428,198 @@ function getMusicalRoleById(id: number): MusicalRole | undefined {
 function nextMusicalRolePosition(): number {
   const row = db.prepare('SELECT COALESCE(MAX(position), 0) as maxPosition FROM musical_roles').get() as { maxPosition: number };
   return Number(row.maxPosition) + 1;
+}
+
+function preferredCategoryRank(category: string): number {
+  const idx = DEFAULT_ROLE_CATEGORIES.findIndex(
+    (item) => item.toLowerCase() === category.toLowerCase()
+  );
+  if (idx === -1) return DEFAULT_ROLE_CATEGORIES.length;
+  // Keep "Otros" last among defaults.
+  if (category.toLowerCase() === 'otros') return DEFAULT_ROLE_CATEGORIES.length + 1;
+  return idx;
+}
+
+function sortRoleCategories(categories: string[]): string[] {
+  return [...categories].sort((a, b) => {
+    const rankDiff = preferredCategoryRank(a) - preferredCategoryRank(b);
+    if (rankDiff !== 0) return rankDiff;
+    return a.localeCompare(b, 'es', { sensitivity: 'base' });
+  });
+}
+
+function listRoleCategories(): string[] {
+  const rows = db
+    .prepare(`SELECT DISTINCT category FROM musical_roles WHERE TRIM(COALESCE(category, '')) != ''`)
+    .all() as Array<{ category: string }>;
+  const seen = new Map<string, string>();
+  for (const item of DEFAULT_ROLE_CATEGORIES) {
+    seen.set(item.toLowerCase(), item);
+  }
+  for (const row of rows) {
+    const value = String(row.category || '').trim().replace(/\s+/g, ' ');
+    if (!value) continue;
+    const key = value.toLowerCase();
+    if (!seen.has(key)) seen.set(key, value);
+  }
+  return sortRoleCategories([...seen.values()]);
+}
+
+function normalizeRoleCategory(input: unknown, existingCategories: string[] = listRoleCategories()): string {
+  const value = String(input || '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .slice(0, MAX_ROLE_CATEGORY_LENGTH);
+  if (!value) return 'Otros';
+  const existing = existingCategories.find((item) => item.toLowerCase() === value.toLowerCase());
+  return existing || value;
+}
+
+function getRoleCategoryByName(): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const role of listMusicalRoles()) {
+    map.set(role.name, normalizeRoleCategory(role.category));
+  }
+  return map;
+}
+
+type ActivityPersonGrouped = {
+  id: number;
+  name: string;
+  photo_url: string;
+  activityRoles: string[];
+  roles: string[];
+  position: number;
+};
+
+type ActivityPeopleGroup = {
+  id: string;
+  label: string;
+  people: ActivityPersonGrouped[];
+};
+
+function getActivityPersonCategoryOrder(activityId: number): Map<string, Map<number, number>> {
+  const rows = db.prepare(`
+    SELECT category, person_id, position
+    FROM activity_person_category_order
+    WHERE activity_id = ?
+  `).all(activityId) as Array<{ category: string; person_id: number; position: number }>;
+
+  const byCategory = new Map<string, Map<number, number>>();
+  for (const row of rows) {
+    const category = String(row.category || '').trim() || 'Otros';
+    if (!byCategory.has(category)) byCategory.set(category, new Map());
+    byCategory.get(category)!.set(Number(row.person_id), Number(row.position) || 0);
+  }
+  return byCategory;
+}
+
+function saveActivityPersonCategoryOrder(activityId: number, category: string, personIds: number[]) {
+  const normalizedCategory = normalizeRoleCategory(category);
+  const assigned = new Set(
+    (db.prepare('SELECT person_id FROM activity_people WHERE activity_id = ?').all(activityId) as Array<{ person_id: number }>)
+      .map((row) => Number(row.person_id))
+  );
+
+  const orderedIds = [...new Set(
+    personIds
+      .map((id) => Number(id))
+      .filter((id) => Number.isInteger(id) && id > 0 && assigned.has(id))
+  )];
+
+  const save = db.transaction(() => {
+    db.prepare('DELETE FROM activity_person_category_order WHERE activity_id = ? AND category = ?')
+      .run(activityId, normalizedCategory);
+    const insert = db.prepare(`
+      INSERT INTO activity_person_category_order (activity_id, category, person_id, position)
+      VALUES (?, ?, ?, ?)
+    `);
+    orderedIds.forEach((personId, index) => {
+      insert.run(activityId, normalizedCategory, personId, index + 1);
+    });
+  });
+
+  save();
+}
+
+function saveActivityPersonCategoryOrdersFromBody(activityId: number, req: express.Request) {
+  const raw = req.body?.person_order;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return;
+
+  for (const [categoryRaw, idsRaw] of Object.entries(raw as Record<string, unknown>)) {
+    const category = normalizeRoleCategory(categoryRaw);
+    const ids = Array.isArray(idsRaw) ? idsRaw : (idsRaw !== undefined && idsRaw !== null ? [idsRaw] : []);
+    const personIds = ids
+      .map((id) => Number(id))
+      .filter((id) => Number.isInteger(id) && id > 0);
+    if (personIds.length === 0) continue;
+    saveActivityPersonCategoryOrder(activityId, category, personIds);
+  }
+}
+
+function groupActivityPeopleByRoleCategory(people: any[], activityId?: number): ActivityPeopleGroup[] {
+  const categoryByRole = getRoleCategoryByName();
+  const groups = new Map<string, Map<number, ActivityPersonGrouped>>();
+
+  const ensureBucket = (category: string) => {
+    if (!groups.has(category)) groups.set(category, new Map());
+    return groups.get(category)!;
+  };
+
+  for (const person of people) {
+    const roles = (person.activityRoles || person.roles || []) as string[];
+    if (!roles.length) {
+      const bucket = ensureBucket('Otros');
+      if (!bucket.has(person.id)) {
+        bucket.set(person.id, {
+          id: person.id,
+          name: person.name,
+          photo_url: person.photo_url || '',
+          activityRoles: [],
+          roles: person.roles || [],
+          position: Number(person.position) || 0,
+        });
+      }
+      continue;
+    }
+
+    const rolesByCategory = new Map<string, string[]>();
+    for (const role of roles) {
+      const category = categoryByRole.get(role) || 'Otros';
+      const list = rolesByCategory.get(category) || [];
+      list.push(role);
+      rolesByCategory.set(category, list);
+    }
+
+    for (const [category, categoryRoles] of rolesByCategory) {
+      const bucket = ensureBucket(category);
+      bucket.set(person.id, {
+        id: person.id,
+        name: person.name,
+        photo_url: person.photo_url || '',
+        activityRoles: categoryRoles,
+        roles: person.roles || [],
+        position: Number(person.position) || 0,
+      });
+    }
+  }
+
+  return sortRoleCategories([...groups.keys()])
+    .map((category) => {
+      const peopleInGroup = [...(groups.get(category)?.values() || [])]
+        .sort((a, b) => {
+          const aPos = a.position > 0 ? a.position : Number.POSITIVE_INFINITY;
+          const bPos = b.position > 0 ? b.position : Number.POSITIVE_INFINITY;
+          if (aPos !== bPos) return aPos - bPos;
+          return String(a.name).localeCompare(String(b.name), 'es');
+        });
+      return {
+        id: category,
+        label: category,
+        people: peopleInGroup,
+      };
+    })
+    .filter((group) => group.people.length > 0);
 }
 
 function renameRoleEverywhere(oldName: string, newName: string) {
@@ -1197,25 +1396,46 @@ app.post('/admin/personas/:id/delete', requireAuth, (req, res) => {
 
 app.get('/admin/ajustes', requireAuth, (_req, res) => {
   const roles = listMusicalRoles();
-  res.render('admin-settings', { roles, multimediaCount: countMultimediaFiles() });
+  res.render('admin-settings', {
+    roles,
+    multimediaCount: countMultimediaFiles(),
+  });
 });
 
 app.get('/admin/ajustes/roles/nuevo', requireAuth, (_req, res) => {
-  res.render('admin-role-form', { role: null, fieldErrors: {} });
+  res.render('admin-role-form', {
+    role: null,
+    fieldErrors: {},
+    roleCategories: listRoleCategories(),
+  });
 });
 
 app.post('/admin/ajustes/roles', requireAuth, (req, res) => {
   const name = (req.body.name || '').trim();
+  const categories = listRoleCategories();
+  const category = normalizeRoleCategory(req.body.category, categories);
   if (!name) {
     showFormError(res, 'El nombre del rol es requerido');
-    return res.status(400).render('admin-role-form', { role: { name: '' }, fieldErrors: { name: true } });
+    return res.status(400).render('admin-role-form', {
+      role: { name: '', category },
+      fieldErrors: { name: true },
+      roleCategories: sortRoleCategories([...categories, category]),
+    });
   }
   const existing = db.prepare('SELECT id FROM musical_roles WHERE LOWER(name) = LOWER(?)').get(name) as { id: number } | undefined;
   if (existing) {
     showFormError(res, 'Ya existe un rol con ese nombre');
-    return res.status(400).render('admin-role-form', { role: { name }, fieldErrors: { name: true } });
+    return res.status(400).render('admin-role-form', {
+      role: { name, category },
+      fieldErrors: { name: true },
+      roleCategories: sortRoleCategories([...categories, category]),
+    });
   }
-  const insert = db.prepare('INSERT INTO musical_roles (name, position) VALUES (?, ?)').run(name, nextMusicalRolePosition());
+  const insert = db.prepare('INSERT INTO musical_roles (name, category, position) VALUES (?, ?, ?)').run(
+    name,
+    category,
+    nextMusicalRolePosition()
+  );
   const roleId = Number(insert.lastInsertRowid);
   return flashRedirect(req, res, `/admin/ajustes/roles/${roleId}/editar`, 'success', 'Rol creado correctamente');
 });
@@ -1225,7 +1445,11 @@ app.get('/admin/ajustes/roles/:id/editar', requireAuth, (req, res) => {
   if (!role) {
     return flashRedirect(req, res, '/admin/ajustes', 'error', 'Rol no encontrado');
   }
-  res.render('admin-role-form', { role, fieldErrors: {} });
+  res.render('admin-role-form', {
+    role,
+    fieldErrors: {},
+    roleCategories: listRoleCategories(),
+  });
 });
 
 app.post('/admin/ajustes/roles/:id', requireAuth, (req, res) => {
@@ -1234,17 +1458,27 @@ app.post('/admin/ajustes/roles/:id', requireAuth, (req, res) => {
     return flashRedirect(req, res, '/admin/ajustes', 'error', 'Rol no encontrado');
   }
   const name = (req.body.name || '').trim();
+  const categories = listRoleCategories();
+  const category = normalizeRoleCategory(req.body.category, categories);
   if (!name) {
     showFormError(res, 'El nombre del rol es requerido');
-    return res.status(400).render('admin-role-form', { role: { ...role, name: '' }, fieldErrors: { name: true } });
+    return res.status(400).render('admin-role-form', {
+      role: { ...role, name: '', category },
+      fieldErrors: { name: true },
+      roleCategories: sortRoleCategories([...categories, category]),
+    });
   }
   const existing = db.prepare('SELECT id FROM musical_roles WHERE LOWER(name) = LOWER(?) AND id != ?').get(name, role.id) as { id: number } | undefined;
   if (existing) {
     showFormError(res, 'Ya existe un rol con ese nombre');
-    return res.status(400).render('admin-role-form', { role: { ...role, name }, fieldErrors: { name: true } });
+    return res.status(400).render('admin-role-form', {
+      role: { ...role, name, category },
+      fieldErrors: { name: true },
+      roleCategories: sortRoleCategories([...categories, category]),
+    });
   }
 
-  db.prepare('UPDATE musical_roles SET name = ? WHERE id = ?').run(name, role.id);
+  db.prepare('UPDATE musical_roles SET name = ?, category = ? WHERE id = ?').run(name, category, role.id);
   renameRoleEverywhere(role.name, name);
   return flashRedirect(req, res, `/admin/ajustes/roles/${role.id}/editar`, 'success', 'Rol actualizado correctamente');
 });
@@ -1267,6 +1501,7 @@ app.get('/admin/actividades/nueva', requireAuth, (req, res) => {
     people,
     assignedSongs: [],
     assignedPeople: [],
+    peopleGroups: [],
     roles: listMusicalRoleNames(),
     fieldErrors: {},
     error: null,
@@ -1280,7 +1515,17 @@ app.get('/admin/actividades/:id/editar', requireAuth, (req, res) => {
   }
   const songs = db.prepare('SELECT * FROM songs ORDER BY title ASC').all() as Song[];
   const people = listAssignablePeopleForActivity(assignedPeople);
-  res.render('activity-form', { activity, songs, people, assignedSongs, assignedPeople, roles: listMusicalRoleNames(), fieldErrors: {}, error: null });
+  res.render('activity-form', {
+    activity,
+    songs,
+    people,
+    assignedSongs,
+    assignedPeople,
+    peopleGroups: groupActivityPeopleByRoleCategory(assignedPeople, activity.id),
+    roles: listMusicalRoleNames(),
+    fieldErrors: {},
+    error: null,
+  });
 });
 
 app.post('/admin/actividades', requireAuth, (req, res) => {
@@ -1298,6 +1543,7 @@ app.post('/admin/actividades', requireAuth, (req, res) => {
       people,
       assignedSongs: buildAssignedSongsFromBody(req),
       assignedPeople: buildAssignedPeopleFromBody(req),
+      peopleGroups: [],
       roles: listMusicalRoleNames(),
       fieldErrors: { name: !name, activity_date: !activityDate },
       error: null,
@@ -1334,14 +1580,16 @@ app.post('/admin/actividades/:id', requireAuth, (req, res) => {
   const detail = (req.body.detail || '').trim();
   if (!name || !activityDate) {
     const songs = db.prepare('SELECT * FROM songs ORDER BY title ASC').all() as Song[];
-    const people = listAssignablePeopleForActivity(buildAssignedPeopleFromBody(req));
+    const assignedPeople = buildAssignedPeopleFromBody(req);
+    const people = listAssignablePeopleForActivity(assignedPeople);
     showFormError(res, 'El nombre y la fecha son requeridos');
     return res.status(400).render('activity-form', {
       activity: { ...existing, name, activity_date: activityDate, activity_time: activityTime, detail },
       songs,
       people,
       assignedSongs: buildAssignedSongsFromBody(req),
-      assignedPeople: buildAssignedPeopleFromBody(req),
+      assignedPeople,
+      peopleGroups: groupActivityPeopleByRoleCategory(assignedPeople, existing.id),
       roles: listMusicalRoleNames(),
       fieldErrors: { name: !name, activity_date: !activityDate },
       error: null,
@@ -1377,6 +1625,7 @@ app.post('/admin/actividades/:id', requireAuth, (req, res) => {
 
 app.post('/admin/actividades/:id/delete', requireAuth, (req, res) => {
   db.prepare('DELETE FROM activity_person_roles WHERE activity_id = ?').run(req.params.id);
+  db.prepare('DELETE FROM activity_person_category_order WHERE activity_id = ?').run(req.params.id);
   db.prepare('DELETE FROM activity_people WHERE activity_id = ?').run(req.params.id);
   db.prepare('DELETE FROM activity_songs WHERE activity_id = ?').run(req.params.id);
   db.prepare('DELETE FROM activities WHERE id = ?').run(req.params.id);
@@ -1393,7 +1642,12 @@ app.get('/actividades/:slug', (req, res) => {
     return flashRedirect(req, res, '/actividades', 'error', 'Actividad no encontrada');
   }
   const { songs, people } = getActivityRelations(activity.id);
-  res.render('activity-detail', { activity, songs, people });
+  res.render('activity-detail', {
+    activity,
+    songs,
+    people,
+    peopleGroups: groupActivityPeopleByRoleCategory(people, activity.id),
+  });
 });
 
 app.get('/admin/songs/new', requireAuth, (req, res) => {

@@ -3,6 +3,13 @@
   const isEdit = !!(role && role.id);
   const errors = typeof fieldErrors !== 'undefined' && fieldErrors ? fieldErrors : {};
   const formName = role && role.name ? role.name : '';
+  const formCategory = role && role.category ? role.category : 'Otros';
+  const categories = typeof roleCategories !== 'undefined' && Array.isArray(roleCategories) && roleCategories.length
+    ? roleCategories
+    : ['Músicos', 'Cantantes', 'Sonido', 'Otros'];
+  const allCategories = categories.includes(formCategory)
+    ? categories
+    : categories.concat(formCategory);
 %>
 
 <%- include('partials/head') %>
@@ -38,6 +45,35 @@
       <% if (errors.name) { %><p class="field-error">Revisa el nombre del rol</p><% } %>
     </div>
 
+    <div class="form-group" data-category-picker>
+      <label>Tipo *</label>
+      <div class="chip-selector chip-selector--single" data-category-chips>
+        <% allCategories.forEach((item) => { %>
+          <label class="chip-option">
+            <input
+              type="radio"
+              name="category"
+              value="<%= item %>"
+              <%= formCategory === item ? 'checked' : '' %>
+              required
+            >
+            <span><%= item %></span>
+          </label>
+        <% }) %>
+      </div>
+      <div class="category-tag-add">
+        <input
+          type="text"
+          data-category-new
+          maxlength="40"
+          placeholder="Nuevo tipo…"
+          autocomplete="off"
+        >
+        <button type="button" class="btn btn-secondary btn-sm" data-category-add>Añadir</button>
+      </div>
+      <p class="help-text">Elige un tipo o crea uno nuevo. Solo puede haber uno por rol.</p>
+    </div>
+
     <div class="form-actions">
       <a href="<%= base %>/admin/ajustes" class="btn btn-secondary">Cancelar</a>
       <button type="submit" class="btn btn-primary"><%= isEdit ? '💾 Guardar' : '✅ Crear' %></button>
@@ -63,5 +99,66 @@
   </section>
   <script src="<%= base %>/confirm-delete.js"></script>
 <% } %>
+
+<script>
+  (function () {
+    var root = document.querySelector('[data-category-picker]');
+    if (!root) return;
+
+    var chips = root.querySelector('[data-category-chips]');
+    var input = root.querySelector('[data-category-new]');
+    var addBtn = root.querySelector('[data-category-add]');
+    if (!chips || !input || !addBtn) return;
+
+    function normalize(value) {
+      return String(value || '').trim().replace(/\s+/g, ' ').slice(0, 40);
+    }
+
+    function findChip(value) {
+      var radios = chips.querySelectorAll('input[type="radio"][name="category"]');
+      for (var i = 0; i < radios.length; i += 1) {
+        if (radios[i].value.toLowerCase() === value.toLowerCase()) return radios[i];
+      }
+      return null;
+    }
+
+    function addCategory() {
+      var value = normalize(input.value);
+      if (!value) {
+        input.focus();
+        return;
+      }
+
+      var existing = findChip(value);
+      if (existing) {
+        existing.checked = true;
+        input.value = '';
+        input.focus();
+        return;
+      }
+
+      var label = document.createElement('label');
+      label.className = 'chip-option';
+      label.innerHTML =
+        '<input type="radio" name="category" value="" required>' +
+        '<span></span>';
+      var radio = label.querySelector('input');
+      var span = label.querySelector('span');
+      radio.value = value;
+      radio.checked = true;
+      span.textContent = value;
+      chips.appendChild(label);
+      input.value = '';
+      input.focus();
+    }
+
+    addBtn.addEventListener('click', addCategory);
+    input.addEventListener('keydown', function (event) {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      addCategory();
+    });
+  })();
+</script>
 
 <%- include('partials/foot') %>

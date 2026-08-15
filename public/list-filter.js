@@ -44,16 +44,39 @@
       var query = effectiveQuery(rawQuery);
       var items = getItems();
       var visible = 0;
+      var uniqueKeys = {};
+      var hasPersonIds = false;
 
       items.forEach(function (item) {
         var matches = !query || itemText(item).indexOf(query) !== -1;
         setHidden(item, !matches);
-        if (matches) visible += 1;
+        if (!matches) return;
+
+        visible += 1;
+        var personId = item.getAttribute('data-person-id');
+        if (personId) {
+          hasPersonIds = true;
+          uniqueKeys[personId] = true;
+        }
+      });
+
+      var groupEls = Array.prototype.slice.call(root.querySelectorAll('[data-list-filter-group]'));
+      groupEls.forEach(function (groupEl) {
+        var groupItems = Array.prototype.slice.call(groupEl.querySelectorAll('[data-list-filter-item]'));
+        var groupVisible = groupItems.some(function (item) {
+          return !item.hidden && !item.classList.contains('is-hidden');
+        });
+        setHidden(groupEl, groupItems.length > 0 && !groupVisible);
       });
 
       if (countEl) {
-        if (query) countEl.textContent = String(visible);
-        else countEl.textContent = String(totalHint || items.length);
+        if (!query) {
+          countEl.textContent = String(totalHint || items.length);
+        } else if (hasPersonIds) {
+          countEl.textContent = String(Object.keys(uniqueKeys).length);
+        } else {
+          countEl.textContent = String(visible);
+        }
       }
 
       if (emptyEl) {
