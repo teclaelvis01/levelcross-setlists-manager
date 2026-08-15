@@ -5,8 +5,6 @@
     <h1>🔐 Iniciar Sesión</h1>
     <p class="auth-desc">Accede para gestionar el setlist.</p>
 
-    <div id="loginError" class="alert alert-error" style="display: none;"></div>
-
     <form id="loginForm" class="auth-form">
       <div class="form-group">
         <label for="username">Usuario</label>
@@ -24,12 +22,10 @@
 <script>
   const baseUrl = '<%= (typeof baseUrl !== "undefined" ? baseUrl : "") %>';
   const loginForm = document.getElementById('loginForm');
-  const loginError = document.getElementById('loginError');
   const loginBtn = document.getElementById('loginBtn');
 
   loginForm.addEventListener('submit', async (e) => {
     e.preventDefault();
-    loginError.style.display = 'none';
     loginBtn.disabled = true;
     loginBtn.textContent = 'Ingresando...';
 
@@ -48,12 +44,18 @@
       if (data.success) {
         window.location.href = data.redirectTo;
       } else {
-        loginError.textContent = data.error || 'Error desconocido';
-        loginError.style.display = 'block';
+        if (window.showAppToast) {
+          window.showAppToast(data.error || 'Error desconocido', 'error');
+        } else {
+          alert(data.error || 'Error desconocido');
+        }
       }
     } catch (error) {
-      loginError.textContent = 'Error de conexión. Intente de nuevo.';
-      loginError.style.display = 'block';
+      if (window.showAppToast) {
+        window.showAppToast('Error de conexión. Intente de nuevo.', 'error');
+      } else {
+        alert('Error de conexión. Intente de nuevo.');
+      }
     } finally {
       loginBtn.disabled = false;
       loginBtn.textContent = 'Ingresar';

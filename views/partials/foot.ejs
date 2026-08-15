@@ -2,5 +2,63 @@
   <footer>
     <p>LevelCross Setlists</p>
   </footer>
+
+  <% if (typeof flash !== 'undefined' && flash && flash.message) { %>
+    <div class="app-toast app-toast--<%= flash.type || 'info' %>" data-app-toast role="alert" aria-live="assertive">
+      <p class="app-toast__message"><%= flash.message %></p>
+      <button type="button" class="app-toast__close" data-app-toast-close aria-label="Cerrar">×</button>
+    </div>
+  <% } %>
+
+  <script>
+    (function () {
+      function closeToast(toast) {
+        if (!toast) return;
+        toast.classList.add('is-leaving');
+        window.setTimeout(function () {
+          toast.remove();
+        }, 180);
+      }
+
+      document.querySelectorAll('[data-app-toast]').forEach(function (toast) {
+        var closeBtn = toast.querySelector('[data-app-toast-close]');
+        if (closeBtn) {
+          closeBtn.addEventListener('click', function () {
+            closeToast(toast);
+          });
+        }
+
+        if (toast.classList.contains('app-toast--success') || toast.classList.contains('app-toast--info')) {
+          window.setTimeout(function () {
+            closeToast(toast);
+          }, 5000);
+        }
+      });
+
+      window.showAppToast = function (message, type) {
+        var existing = document.querySelector('[data-app-toast]');
+        if (existing) existing.remove();
+
+        var toast = document.createElement('div');
+        toast.className = 'app-toast app-toast--' + (type || 'info');
+        toast.setAttribute('data-app-toast', '');
+        toast.setAttribute('role', 'alert');
+        toast.setAttribute('aria-live', 'assertive');
+        toast.innerHTML =
+          '<p class="app-toast__message"></p>' +
+          '<button type="button" class="app-toast__close" data-app-toast-close aria-label="Cerrar">×</button>';
+        toast.querySelector('.app-toast__message').textContent = message;
+        document.body.appendChild(toast);
+        toast.querySelector('[data-app-toast-close]').addEventListener('click', function () {
+          closeToast(toast);
+        });
+        if (type === 'success' || type === 'info') {
+          window.setTimeout(function () {
+            closeToast(toast);
+          }, 5000);
+        }
+      };
+    })();
+  </script>
 </body>
 </html>

@@ -1,0 +1,40 @@
+<%
+  const base = typeof baseUrl !== 'undefined' ? baseUrl : '';
+  const safeRoles = typeof roles !== 'undefined' ? roles : [];
+%>
+
+<%- include('partials/head') %>
+
+<div class="page-header">
+  <div>
+    <h1>Ajustes</h1>
+    <p class="page-subtitle">Configura los roles musicales del ministerio</p>
+  </div>
+  <div class="header-actions">
+    <a href="<%= base %>/admin/ajustes/roles/nuevo" class="btn btn-primary">+ Nuevo rol</a>
+  </div>
+</div>
+
+<%- include('partials/admin-nav', { adminSection: 'settings' }) %>
+
+<section class="section-card">
+  <h2>Roles musicales</h2>
+  <p class="help-text">Estos roles se usan al crear personas y al asignarlas a actividades.</p>
+
+  <% if (safeRoles.length === 0) { %>
+    <div class="empty-state compact">
+      <p>No hay roles creados aún</p>
+      <a href="<%= base %>/admin/ajustes/roles/nuevo" class="btn btn-primary">+ Crear primer rol</a>
+    </div>
+  <% } else { %>
+    <div class="role-list admin-list">
+      <% safeRoles.forEach(roleItem => { %>
+        <a href="<%= base %>/admin/ajustes/roles/<%= roleItem.id %>/editar" class="role-card admin-entity-card person-card--link">
+          <h3 class="admin-entity-card__title"><%= roleItem.name %></h3>
+        </a>
+      <% }) %>
+    </div>
+  <% } %>
+</section>
+
+<%- include('partials/foot') %>

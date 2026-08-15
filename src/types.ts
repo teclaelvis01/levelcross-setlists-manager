@@ -47,6 +47,13 @@ export interface ActivityPersonRole {
   role: string;
 }
 
+export interface MusicalRole {
+  id: number;
+  name: string;
+  position: number;
+  created_at: string;
+}
+
 export interface User {
   id: number;
   username: string;
@@ -58,5 +65,9 @@ declare module 'express-session' {
   interface SessionData {
     userId?: number;
     username?: string;
+    flash?: {
+      type: 'error' | 'success' | 'info';
+      message: string;
+    };
   }
 }

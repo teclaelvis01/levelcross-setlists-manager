@@ -19,13 +19,6 @@
 
 <%- include('partials/admin-nav', { adminSection: 'songs' }) %>
 
-<% if (typeof dbSuccess !== 'undefined' && dbSuccess) { %>
-  <div class="alert alert-success"><%= dbSuccess %></div>
-<% } %>
-<% if (typeof dbError !== 'undefined' && dbError) { %>
-  <div class="alert alert-error"><%= dbError %></div>
-<% } %>
-
 <div class="search-bar">
   <form action="<%= base %>/admin" method="GET">
     <input type="text" name="search" placeholder="Buscar canción..." value="<%= safeSearch %>">

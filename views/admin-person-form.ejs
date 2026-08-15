@@ -1,7 +1,10 @@
 <%
   const base = typeof baseUrl !== 'undefined' ? baseUrl : '';
-  const isEdit = !!person;
-  const currentPhoto = isEdit && person.photo_url ? photoSrc(person.photo_url) : '';
+  const isEdit = !!(person && person.id);
+  const errors = typeof fieldErrors !== 'undefined' && fieldErrors ? fieldErrors : {};
+  const selectedRoles = person && Array.isArray(person.roles) ? person.roles : [];
+  const currentPhoto = person && person.photo_url ? photoSrc(person.photo_url) : '';
+  const formName = person && person.name ? person.name : '';
 %>
 
 <%- include('partials/head') %>
@@ -23,20 +26,21 @@
     class="song-form"
     enctype="multipart/form-data"
   >
-    <div class="form-group">
+    <div class="form-group<%= errors.name ? ' is-invalid' : '' %>">
       <label for="name">Nombre *</label>
-      <input type="text" id="name" name="name" required value="<%= isEdit ? person.name : '' %>" placeholder="Ej: Camilo Pérez">
+      <input type="text" id="name" name="name" required value="<%= formName %>" placeholder="Ej: Camilo Pérez" aria-invalid="<%= errors.name ? 'true' : 'false' %>">
+      <% if (errors.name) { %><p class="field-error">El nombre es obligatorio</p><% } %>
     </div>
 
-    <div class="form-group">
+    <div class="form-group<%= errors.photo ? ' is-invalid' : '' %>">
       <label>Foto</label>
-      <p class="help-text">JPG, PNG, WebP o GIF. Máximo 1 MB.</p>
+      <p class="help-text">Elige una imagen y recórtala a 150×150. Máximo 1 MB.</p>
 
       <div class="photo-upload" data-photo-upload<%= currentPhoto ? ' data-has-photo' : '' %>>
         <button type="button" class="photo-upload__preview" data-photo-trigger aria-label="Elegir foto">
           <span data-photo-preview>
             <% if (currentPhoto) { %>
-              <img src="<%= currentPhoto %>" alt="<%= person.name %>" class="photo-upload__img" referrerpolicy="no-referrer">
+              <img src="<%= currentPhoto %>" alt="<%= formName %>" class="photo-upload__img" referrerpolicy="no-referrer">
             <% } else { %>
               <span class="photo-upload__placeholder" aria-hidden="true">+</span>
             <% } %>
@@ -52,6 +56,7 @@
             accept="image/jpeg,image/png,image/webp,image/gif"
             data-photo-input
           >
+          <input type="hidden" name="kept_photo_url" value="<%= person && person.photo_url ? person.photo_url : '' %>" data-kept-photo>
           <input type="hidden" name="remove_photo" value="0" data-photo-remove>
 
           <div class="photo-upload__actions">
@@ -65,19 +70,25 @@
           <p class="photo-upload__filename" data-photo-filename></p>
         </div>
       </div>
+      <% if (errors.photo) { %><p class="field-error">Revisa la imagen seleccionada</p><% } %>
     </div>
 
-    <div class="form-group">
+    <div class="form-group<%= errors.roles ? ' is-invalid' : '' %>">
       <label>Roles *</label>
       <p class="help-text">Selecciona todos los roles que esta persona puede desempeñar.</p>
-      <div class="chip-selector">
-        <% roles.forEach(role => { %>
-          <label class="chip-option">
-            <input type="checkbox" name="roles" value="<%= role %>" <%= isEdit && Array.isArray(person.roles) && person.roles.includes(role) ? 'checked' : '' %>>
-            <span><%= role %></span>
-          </label>
-        <% }) %>
+      <div class="chip-selector<%= errors.roles ? ' is-invalid' : '' %>">
+        <% if (!roles || roles.length === 0) { %>
+          <p class="help-text">No hay roles configurados. Créalos en <a href="<%= base %>/admin/ajustes">Ajustes</a>.</p>
+        <% } else { %>
+          <% roles.forEach(role => { %>
+            <label class="chip-option">
+              <input type="checkbox" name="roles" value="<%= role %>" <%= selectedRoles.includes(role) ? 'checked' : '' %>>
+              <span><%= role %></span>
+            </label>
+          <% }) %>
+        <% } %>
       </div>
+      <% if (errors.roles) { %><p class="field-error">Selecciona al menos un rol</p><% } %>
     </div>
 
     <div class="form-actions">
@@ -101,68 +112,32 @@
   </section>
 <% } %>
 
-<script>
-  (function () {
-    const root = document.querySelector('[data-photo-upload]');
-    if (!root) return;
+<div class="photo-crop-modal" data-photo-crop-modal hidden>
+  <div class="photo-crop-modal__backdrop" data-crop-backdrop></div>
+  <div class="photo-crop-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="photo-crop-title">
+    <div class="photo-crop-modal__header">
+      <h2 id="photo-crop-title">Recortar foto</h2>
+      <p>Arrastra para encuadrar y usa el zoom. Se guardará a 150×150.</p>
+    </div>
 
-    const input = root.querySelector('[data-photo-input]');
-    const preview = root.querySelector('[data-photo-preview]');
-    const remove = root.querySelector('[data-photo-remove]');
-    const clearBtn = root.querySelector('[data-photo-clear]');
-    const filename = root.querySelector('[data-photo-filename]');
-    const triggers = root.querySelectorAll('[data-photo-trigger]');
-    const triggerLabel = root.querySelector('[data-photo-trigger-label]');
-    const hadInitialPhoto = root.hasAttribute('data-has-photo');
-    let objectUrl = null;
+    <div class="photo-crop-stage">
+      <div class="photo-crop-viewport">
+        <img alt="" draggable="false" data-crop-image class="photo-crop-image">
+      </div>
+    </div>
 
-    const setPreview = (html) => {
-      if (preview) preview.innerHTML = html;
-    };
+    <label class="photo-crop-zoom">
+      <span>Zoom</span>
+      <input type="range" min="1" max="3" step="0.01" value="1" data-crop-zoom>
+    </label>
 
-    const setEmpty = () => {
-      setPreview('<span class="photo-upload__placeholder" aria-hidden="true">+</span>');
-      if (filename) filename.textContent = '';
-      if (triggerLabel) triggerLabel.textContent = 'Elegir foto';
-      if (clearBtn) clearBtn.classList.add('is-hidden');
-      root.removeAttribute('data-has-photo');
-    };
+    <div class="photo-crop-modal__actions">
+      <button type="button" class="btn btn-secondary" data-crop-cancel>Cancelar</button>
+      <button type="button" class="btn btn-primary" data-crop-apply>Usar foto</button>
+    </div>
+  </div>
+</div>
 
-    const setFilled = (src, name) => {
-      setPreview('<img src="' + src + '" alt="" class="photo-upload__img">');
-      if (filename) filename.textContent = name || '';
-      if (triggerLabel) triggerLabel.textContent = 'Cambiar foto';
-      if (clearBtn) clearBtn.classList.remove('is-hidden');
-      root.setAttribute('data-has-photo', '');
-    };
-
-    triggers.forEach((btn) => {
-      btn.addEventListener('click', () => input && input.click());
-    });
-
-    if (input) {
-      input.addEventListener('change', () => {
-        const file = input.files && input.files[0];
-        if (!file) return;
-        if (remove) remove.value = '0';
-        if (objectUrl) URL.revokeObjectURL(objectUrl);
-        objectUrl = URL.createObjectURL(file);
-        setFilled(objectUrl, file.name);
-      });
-    }
-
-    if (clearBtn) {
-      clearBtn.addEventListener('click', () => {
-        if (input) input.value = '';
-        if (objectUrl) {
-          URL.revokeObjectURL(objectUrl);
-          objectUrl = null;
-        }
-        if (remove) remove.value = hadInitialPhoto ? '1' : '0';
-        setEmpty();
-      });
-    }
-  })();
-</script>
+<script src="<%= base %>/photo-crop.js"></script>
 
 <%- include('partials/foot') %>

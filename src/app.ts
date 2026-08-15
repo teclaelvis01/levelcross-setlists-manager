@@ -5,7 +5,7 @@ import bcrypt from 'bcryptjs';
 import multer from 'multer';
 import fs from 'fs';
 import dbDefault, { openDatabase } from './db';
-import { Song } from './types';
+import { MusicalRole, Song } from './types';
 
 let db = dbDefault;
 
@@ -15,15 +15,6 @@ const BASE_URL = process.env.BASE_URL || '';
 const SALT_ROUNDS = 10;
 const DEFAULT_SONGS_PER_PAGE = 12;
 const PAGE_SIZE_OPTIONS = [5, 10, 50];
-const MUSICAL_ROLES = [
-  'Bajo',
-  'Guitarra eléctrica',
-  'Guitarra acústica',
-  'Batería',
-  'Voz principal',
-  'Voces',
-  'Técnico de sonido',
-] as const;
 
 // Make baseUrl available to all views
 app.locals.baseUrl = BASE_URL;
@@ -297,7 +288,37 @@ function getActivityPeoplePreview(activityId: number) {
   `).all(activityId) as Array<{ id: number; name: string; photo_url: string }>;
 }
 
+function listMusicalRoles(): MusicalRole[] {
+  return db.prepare('SELECT * FROM musical_roles ORDER BY position ASC, name ASC').all() as MusicalRole[];
+}
+
+function listMusicalRoleNames(): string[] {
+  return listMusicalRoles().map((role) => role.name);
+}
+
+function getMusicalRoleById(id: number): MusicalRole | undefined {
+  return db.prepare('SELECT * FROM musical_roles WHERE id = ?').get(id) as MusicalRole | undefined;
+}
+
+function nextMusicalRolePosition(): number {
+  const row = db.prepare('SELECT COALESCE(MAX(position), 0) as maxPosition FROM musical_roles').get() as { maxPosition: number };
+  return Number(row.maxPosition) + 1;
+}
+
+function renameRoleEverywhere(oldName: string, newName: string) {
+  if (oldName === newName) return;
+  db.prepare('UPDATE person_roles SET role = ? WHERE role = ?').run(newName, oldName);
+  db.prepare('UPDATE activity_person_roles SET role = ? WHERE role = ?').run(newName, oldName);
+}
+
+function deleteRoleEverywhere(roleName: string) {
+  db.prepare('DELETE FROM person_roles WHERE role = ?').run(roleName);
+  db.prepare('DELETE FROM activity_person_roles WHERE role = ?').run(roleName);
+  db.prepare('DELETE FROM musical_roles WHERE name = ?').run(roleName);
+}
+
 function collectSelectedRoles(input: unknown): string[] {
+  const allowedRoles = new Set(listMusicalRoleNames());
   const rawValues = Array.isArray(input)
     ? input
     : input === undefined || input === null || input === ''
@@ -308,7 +329,7 @@ function collectSelectedRoles(input: unknown): string[] {
     .flatMap(value => typeof value === 'string' ? value.split(',') : [value])
     .map(value => String(value).trim())
     .filter(Boolean)
-    .filter((value) => MUSICAL_ROLES.includes(value as typeof MUSICAL_ROLES[number]));
+    .filter((value) => allowedRoles.has(value));
 
   return [...new Set(values)];
 }
@@ -413,13 +434,20 @@ function getPaginatedSongs(search: string, page: number, pageSize?: number) {
   };
 }
 
-app.use((req, _res, next) => {
+app.use((req, res, next) => {
   if (req.session) {
     app.locals.isAuthenticated = !!req.session.userId;
     app.locals.username = req.session.username || '';
+    if (req.session.flash) {
+      res.locals.flash = req.session.flash;
+      delete req.session.flash;
+    } else {
+      res.locals.flash = null;
+    }
   } else {
     app.locals.isAuthenticated = false;
     app.locals.username = '';
+    res.locals.flash = null;
   }
   next();
 });
@@ -428,6 +456,52 @@ app.use((req, _res, next) => {
 
 function url(pathName: string): string {
   return BASE_URL + pathName;
+}
+
+function setFlash(req: express.Request, type: 'error' | 'success' | 'info', message: string) {
+  if (req.session) {
+    req.session.flash = { type, message };
+  }
+}
+
+function flashRedirect(
+  req: express.Request,
+  res: express.Response,
+  pathName: string,
+  type: 'error' | 'success' | 'info',
+  message: string
+) {
+  setFlash(req, type, message);
+  return res.redirect(url(pathName));
+}
+
+function showFormError(res: express.Response, message: string) {
+  res.locals.flash = { type: 'error', message };
+}
+
+function buildAssignedPeopleFromBody(req: express.Request) {
+  const selectedPeople = collectSelectedPeopleIds(req.body.person_ids);
+  const rolesByPerson = collectActivityRolesByPerson(req.body.person_roles);
+  const basePeople = listAssignablePeopleForActivity();
+  return selectedPeople.map((personId) => {
+    const person = basePeople.find((item) => item.id === personId) || { id: personId, name: `Persona ${personId}`, roles: [] as string[] };
+    const activityRoles = rolesByPerson[personId] || person.roles || [];
+    return { ...person, activityRoles };
+  });
+}
+
+function buildAssignedSongsFromBody(req: express.Request) {
+  const selectedSongs = Array.isArray(req.body.song_ids) ? req.body.song_ids : (req.body.song_ids ? [req.body.song_ids] : []);
+  const orderLookup = req.body.song_order && typeof req.body.song_order === 'object' ? req.body.song_order : {};
+  const allSongs = db.prepare('SELECT * FROM songs ORDER BY title ASC').all() as Song[];
+  return selectedSongs.map((songId: string | number, index: number) => {
+    const numericId = Number(songId);
+    const song = allSongs.find((item) => item.id === numericId);
+    const order = Number(orderLookup[String(songId)] ?? index + 1);
+    return song
+      ? { ...song, position: Number.isFinite(order) && order > 0 ? order : index + 1 }
+      : null;
+  }).filter(Boolean) as Array<Song & { position: number }>;
 }
 
 function isLocalPersonPhoto(photoUrl: string): boolean {
@@ -452,19 +526,99 @@ function deleteLocalPersonPhoto(photoUrl: string | null | undefined) {
   }
 }
 
+function sanitizeKeptPhotoUrl(value: unknown): string {
+  const raw = String(value || '').trim();
+  if (!isLocalPersonPhoto(raw)) return '';
+  const filename = path.basename(raw);
+  if (!filename || filename === '.' || filename === '..') return '';
+  const fullPath = path.join(peopleUploadsDir, filename);
+  if (!fs.existsSync(fullPath)) return '';
+  return `/uploads/people/${filename}`;
+}
+
+function resolvePersonPhotoDraft(req: express.Request, fallbackPhotoUrl = ''): string {
+  const removePhoto = req.body?.remove_photo === '1' || req.body?.remove_photo === 'on';
+  if (req.file) {
+    return `/uploads/people/${req.file.filename}`;
+  }
+  if (removePhoto) {
+    return '';
+  }
+  const kept = sanitizeKeptPhotoUrl(req.body?.kept_photo_url);
+  if (kept) return kept;
+  return fallbackPhotoUrl || '';
+}
+
+function resolvePersonPhotoForSave(req: express.Request, currentPhotoUrl = ''): string {
+  const removePhoto = req.body?.remove_photo === '1' || req.body?.remove_photo === 'on';
+  const kept = sanitizeKeptPhotoUrl(req.body?.kept_photo_url);
+  const uploaded = req.file ? `/uploads/people/${req.file.filename}` : '';
+
+  if (uploaded) {
+    if (currentPhotoUrl && currentPhotoUrl !== uploaded) deleteLocalPersonPhoto(currentPhotoUrl);
+    if (kept && kept !== uploaded && kept !== currentPhotoUrl) deleteLocalPersonPhoto(kept);
+    return uploaded;
+  }
+
+  if (removePhoto) {
+    if (currentPhotoUrl) deleteLocalPersonPhoto(currentPhotoUrl);
+    if (kept && kept !== currentPhotoUrl) deleteLocalPersonPhoto(kept);
+    return '';
+  }
+
+  if (kept) {
+    if (currentPhotoUrl && currentPhotoUrl !== kept) deleteLocalPersonPhoto(currentPhotoUrl);
+    return kept;
+  }
+
+  return currentPhotoUrl || '';
+}
+
+function renderPersonForm(
+  res: express.Response,
+  person: any,
+  fieldErrors: Record<string, boolean> = {},
+  status = 200
+) {
+  return res.status(status).render('admin-person-form', {
+    person,
+    roles: listMusicalRoleNames(),
+    fieldErrors,
+  });
+}
+
 function handlePersonPhotoUpload(req: express.Request, res: express.Response, next: express.NextFunction) {
   personPhotoUpload.single('photo')(req, res, (err: unknown) => {
-    if (err instanceof multer.MulterError) {
-      if (err.code === 'LIMIT_FILE_SIZE') {
-        return res.status(400).send('La imagen supera el límite de 1 MB');
+    if (!err) return next();
+
+    const message = err instanceof multer.MulterError
+      ? (err.code === 'LIMIT_FILE_SIZE' ? 'La imagen supera el límite de 1 MB' : 'Error al subir la imagen')
+      : (err instanceof Error ? err.message : 'Error al subir la imagen');
+
+    const name = (req.body?.name || '').trim();
+    const selectedRoles = collectSelectedRoles(req.body?.roles);
+    let fallbackPhoto = sanitizeKeptPhotoUrl(req.body?.kept_photo_url);
+    if (req.params.id) {
+      const existing = db.prepare('SELECT * FROM people WHERE id = ? AND deleted_at IS NULL').get(req.params.id) as any | undefined;
+      if (existing) {
+        fallbackPhoto = fallbackPhoto || existing.photo_url || '';
+        showFormError(res, message);
+        return renderPersonForm(
+          res,
+          { ...existing, name, roles: selectedRoles, photo_url: fallbackPhoto },
+          { photo: true },
+          400
+        );
       }
-      return res.status(400).send('Error al subir la imagen');
     }
-    if (err) {
-      const message = err instanceof Error ? err.message : 'Error al subir la imagen';
-      return res.status(400).send(message);
-    }
-    next();
+
+    showFormError(res, message);
+    return renderPersonForm(
+      res,
+      { name, roles: selectedRoles, photo_url: fallbackPhoto },
+      { photo: true },
+      400
+    );
   });
 }
 
@@ -494,7 +648,7 @@ app.get('/songs/:slug', (req, res) => {
   }
   const song = db.prepare('SELECT * FROM songs WHERE slug = ?').get(req.params.slug) as Song | undefined;
   if (!song) {
-    return res.status(404).send('Canción no encontrada');
+    return flashRedirect(req, res, '/', 'error', 'Canción no encontrada');
   }
 
   const rawFrom = typeof req.query.from === 'string' ? req.query.from : '';
@@ -561,7 +715,7 @@ app.get('/setup', (req, res) => {
   if (isSetupComplete()) {
     return res.redirect(url('/login'));
   }
-  res.render('setup', { error: null });
+  res.render('setup', { formValues: { username: '', password: '', confirm_password: '' }, fieldErrors: {} });
 });
 
 app.post('/setup', (req, res) => {
@@ -569,14 +723,35 @@ app.post('/setup', (req, res) => {
     return res.redirect(url('/login'));
   }
   const { username, password, confirm_password } = req.body;
+  const formValues = {
+    username: username || '',
+    password: '',
+    confirm_password: '',
+  };
   if (!username || !password || !confirm_password) {
-    return res.render('setup', { error: 'Todos los campos son requeridos' });
+    showFormError(res, 'Todos los campos son requeridos');
+    return res.status(400).render('setup', {
+      formValues,
+      fieldErrors: {
+        username: !username,
+        password: !password,
+        confirm_password: !confirm_password,
+      },
+    });
   }
   if (password !== confirm_password) {
-    return res.render('setup', { error: 'Las contraseñas no coinciden' });
+    showFormError(res, 'Las contraseñas no coinciden');
+    return res.status(400).render('setup', {
+      formValues: { ...formValues, username },
+      fieldErrors: { password: true, confirm_password: true },
+    });
   }
   if (password.length < 4) {
-    return res.render('setup', { error: 'La contraseña debe tener al menos 4 caracteres' });
+    showFormError(res, 'La contraseña debe tener al menos 4 caracteres');
+    return res.status(400).render('setup', {
+      formValues: { ...formValues, username },
+      fieldErrors: { password: true },
+    });
   }
   const hash = bcrypt.hashSync(password, SALT_ROUNDS);
   try {
@@ -586,7 +761,7 @@ app.post('/setup', (req, res) => {
       req.session.username = username;
       req.session.save((err) => {
         if (err) {
-          return res.status(500).render('setup', { error: 'No se pudo iniciar la sesión. Intente de nuevo.' });
+          return flashRedirect(req, res, '/setup', 'error', 'No se pudo iniciar la sesión. Intente de nuevo.');
         }
         res.redirect(url('/admin'));
       });
@@ -594,7 +769,7 @@ app.post('/setup', (req, res) => {
     }
     res.redirect(url('/admin'));
   } catch {
-    res.render('setup', { error: 'Error al crear el usuario. Intente de nuevo.' });
+    return flashRedirect(req, res, '/setup', 'error', 'Error al crear el usuario. Intente de nuevo.');
   }
 });
 
@@ -687,12 +862,10 @@ app.get('/health', (_req, res) => {
 
 app.get('/admin', requireAuth, (req, res) => {
   const search = (req.query.search as string) || '';
-  const dbError = (req.query.db_error as string) || null;
-  const dbSuccess = (req.query.db_success as string) || null;
   const requestedPage = parseInt(req.query.page as string, 10) || 1;
   const requestedPageSize = parseInt(req.query.pageSize as string, 10) || DEFAULT_SONGS_PER_PAGE;
   const { songs, currentPage, totalPages, totalCount, pageSize, hasPrev, hasNext } = getPaginatedSongs(search, requestedPage, requestedPageSize);
-  res.render('admin', { songs, search, dbError, dbSuccess, currentPage, totalPages, totalCount, pageSize, hasPrev, hasNext });
+  res.render('admin', { songs, search, currentPage, totalPages, totalCount, pageSize, hasPrev, hasNext });
 });
 
 app.get('/admin/actividades', requireAuth, (_req, res) => {
@@ -706,76 +879,135 @@ app.get('/admin/personas', requireAuth, (_req, res) => {
 });
 
 app.get('/admin/personas/nueva', requireAuth, (_req, res) => {
-  res.render('admin-person-form', { person: null, roles: MUSICAL_ROLES });
+  res.render('admin-person-form', { person: null, roles: listMusicalRoleNames(), fieldErrors: {} });
 });
 
 app.post('/admin/personas', requireAuth, handlePersonPhotoUpload, (req, res) => {
   const name = (req.body.name || '').trim();
   const roles = collectSelectedRoles(req.body.roles);
   if (!name || roles.length === 0) {
-    if (req.file) deleteLocalPersonPhoto(`/uploads/people/${req.file.filename}`);
-    return res.status(400).send('El nombre y al menos un rol son requeridos');
+    showFormError(res, 'El nombre y al menos un rol son requeridos');
+    return renderPersonForm(
+      res,
+      { name, roles, photo_url: resolvePersonPhotoDraft(req) },
+      { name: !name, roles: roles.length === 0 },
+      400
+    );
   }
 
-  const photoUrl = req.file ? `/uploads/people/${req.file.filename}` : '';
+  const photoUrl = resolvePersonPhotoForSave(req);
   const insert = db.prepare('INSERT INTO people (name, photo_url) VALUES (?, ?)').run(name, photoUrl);
   const personId = Number(insert.lastInsertRowid);
   for (const role of roles) {
     db.prepare('INSERT INTO person_roles (person_id, role) VALUES (?, ?)').run(personId, role);
   }
-  res.redirect(url('/admin/personas'));
+  return flashRedirect(req, res, '/admin/personas', 'success', 'Persona creada correctamente');
 });
 
 app.get('/admin/personas/:id/editar', requireAuth, (req, res) => {
   const person = db.prepare('SELECT * FROM people WHERE id = ? AND deleted_at IS NULL').get(req.params.id) as any | undefined;
   if (!person) {
-    return res.status(404).send('Persona no encontrada');
+    return flashRedirect(req, res, '/admin/personas', 'error', 'Persona no encontrada');
   }
-  res.render('admin-person-form', {
-    person: { ...person, roles: getPersonRoles(person.id) },
-    roles: MUSICAL_ROLES,
-  });
+  return renderPersonForm(res, { ...person, roles: getPersonRoles(person.id) });
 });
 
 app.post('/admin/personas/:id', requireAuth, handlePersonPhotoUpload, (req, res) => {
   const person = db.prepare('SELECT * FROM people WHERE id = ? AND deleted_at IS NULL').get(req.params.id) as any | undefined;
   if (!person) {
     if (req.file) deleteLocalPersonPhoto(`/uploads/people/${req.file.filename}`);
-    return res.status(404).send('Persona no encontrada');
+    return flashRedirect(req, res, '/admin/personas', 'error', 'Persona no encontrada');
   }
   const name = (req.body.name || '').trim();
   const roles = collectSelectedRoles(req.body.roles);
   if (!name || roles.length === 0) {
-    if (req.file) deleteLocalPersonPhoto(`/uploads/people/${req.file.filename}`);
-    return res.status(400).send('El nombre y al menos un rol son requeridos');
+    showFormError(res, 'El nombre y al menos un rol son requeridos');
+    return renderPersonForm(
+      res,
+      { ...person, name, roles, photo_url: resolvePersonPhotoDraft(req, person.photo_url || '') },
+      { name: !name, roles: roles.length === 0 },
+      400
+    );
   }
 
-  let photoUrl = person.photo_url || '';
-  const removePhoto = req.body.remove_photo === '1' || req.body.remove_photo === 'on';
-
-  if (req.file) {
-    deleteLocalPersonPhoto(photoUrl);
-    photoUrl = `/uploads/people/${req.file.filename}`;
-  } else if (removePhoto) {
-    deleteLocalPersonPhoto(photoUrl);
-    photoUrl = '';
-  }
-
+  const photoUrl = resolvePersonPhotoForSave(req, person.photo_url || '');
   db.prepare('UPDATE people SET name = ?, photo_url = ? WHERE id = ?').run(name, photoUrl, person.id);
   db.prepare('DELETE FROM person_roles WHERE person_id = ?').run(person.id);
   for (const role of roles) {
     db.prepare('INSERT INTO person_roles (person_id, role) VALUES (?, ?)').run(person.id, role);
   }
-  res.redirect(url('/admin/personas'));
+  return flashRedirect(req, res, '/admin/personas', 'success', 'Persona actualizada correctamente');
 });
 
 app.post('/admin/personas/:id/delete', requireAuth, (req, res) => {
   const person = db.prepare('SELECT * FROM people WHERE id = ? AND deleted_at IS NULL').get(req.params.id) as any | undefined;
   if (!person) {
-    return res.status(404).send('Persona no encontrada');
+    return flashRedirect(req, res, '/admin/personas', 'error', 'Persona no encontrada');
   }
   db.prepare('UPDATE people SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?').run(person.id);
-  res.redirect(url('/admin/personas'));
+  return flashRedirect(req, res, '/admin/personas', 'success', 'Persona eliminada correctamente');
+});
+
+app.get('/admin/ajustes', requireAuth, (_req, res) => {
+  const roles = listMusicalRoles();
+  res.render('admin-settings', { roles });
+});
+
+app.get('/admin/ajustes/roles/nuevo', requireAuth, (_req, res) => {
+  res.render('admin-role-form', { role: null, fieldErrors: {} });
+});
+
+app.post('/admin/ajustes/roles', requireAuth, (req, res) => {
+  const name = (req.body.name || '').trim();
+  if (!name) {
+    showFormError(res, 'El nombre del rol es requerido');
+    return res.status(400).render('admin-role-form', { role: { name: '' }, fieldErrors: { name: true } });
+  }
+  const existing = db.prepare('SELECT id FROM musical_roles WHERE LOWER(name) = LOWER(?)').get(name) as { id: number } | undefined;
+  if (existing) {
+    showFormError(res, 'Ya existe un rol con ese nombre');
+    return res.status(400).render('admin-role-form', { role: { name }, fieldErrors: { name: true } });
+  }
+  db.prepare('INSERT INTO musical_roles (name, position) VALUES (?, ?)').run(name, nextMusicalRolePosition());
+  return flashRedirect(req, res, '/admin/ajustes', 'success', 'Rol creado correctamente');
+});
+
+app.get('/admin/ajustes/roles/:id/editar', requireAuth, (req, res) => {
+  const role = getMusicalRoleById(Number(req.params.id));
+  if (!role) {
+    return flashRedirect(req, res, '/admin/ajustes', 'error', 'Rol no encontrado');
+  }
+  res.render('admin-role-form', { role, fieldErrors: {} });
+});
+
+app.post('/admin/ajustes/roles/:id', requireAuth, (req, res) => {
+  const role = getMusicalRoleById(Number(req.params.id));
+  if (!role) {
+    return flashRedirect(req, res, '/admin/ajustes', 'error', 'Rol no encontrado');
+  }
+  const name = (req.body.name || '').trim();
+  if (!name) {
+    showFormError(res, 'El nombre del rol es requerido');
+    return res.status(400).render('admin-role-form', { role: { ...role, name: '' }, fieldErrors: { name: true } });
+  }
+  const existing = db.prepare('SELECT id FROM musical_roles WHERE LOWER(name) = LOWER(?) AND id != ?').get(name, role.id) as { id: number } | undefined;
+  if (existing) {
+    showFormError(res, 'Ya existe un rol con ese nombre');
+    return res.status(400).render('admin-role-form', { role: { ...role, name }, fieldErrors: { name: true } });
+  }
+
+  db.prepare('UPDATE musical_roles SET name = ? WHERE id = ?').run(name, role.id);
+  renameRoleEverywhere(role.name, name);
+  return flashRedirect(req, res, '/admin/ajustes', 'success', 'Rol actualizado correctamente');
+});
+
+app.post('/admin/ajustes/roles/:id/delete', requireAuth, (req, res) => {
+  const role = getMusicalRoleById(Number(req.params.id));
+  if (!role) {
+    return flashRedirect(req, res, '/admin/ajustes', 'error', 'Rol no encontrado');
+  }
+  deleteRoleEverywhere(role.name);
+  return flashRedirect(req, res, '/admin/ajustes', 'success', 'Rol eliminado correctamente');
 });
 
 app.get('/admin/actividades/nueva', requireAuth, (req, res) => {
@@ -787,7 +1019,8 @@ app.get('/admin/actividades/nueva', requireAuth, (req, res) => {
     people,
     assignedSongs: [],
     assignedPeople: [],
-    roles: MUSICAL_ROLES,
+    roles: listMusicalRoleNames(),
+    fieldErrors: {},
     error: null,
   });
 });
@@ -795,11 +1028,11 @@ app.get('/admin/actividades/nueva', requireAuth, (req, res) => {
 app.get('/admin/actividades/:id/editar', requireAuth, (req, res) => {
   const { activity, songs: assignedSongs, people: assignedPeople } = getActivityRelations(Number(req.params.id));
   if (!activity) {
-    return res.status(404).send('Actividad no encontrada');
+    return flashRedirect(req, res, '/admin/actividades', 'error', 'Actividad no encontrada');
   }
   const songs = db.prepare('SELECT * FROM songs ORDER BY title ASC').all() as Song[];
   const people = listAssignablePeopleForActivity(assignedPeople);
-  res.render('activity-form', { activity, songs, people, assignedSongs, assignedPeople, roles: MUSICAL_ROLES, error: null });
+  res.render('activity-form', { activity, songs, people, assignedSongs, assignedPeople, roles: listMusicalRoleNames(), fieldErrors: {}, error: null });
 });
 
 app.post('/admin/actividades', requireAuth, (req, res) => {
@@ -808,7 +1041,19 @@ app.post('/admin/actividades', requireAuth, (req, res) => {
   const activityTime = (req.body.activity_time || '').trim();
   const detail = (req.body.detail || '').trim();
   if (!name || !activityDate) {
-    return res.status(400).send('El nombre y la fecha son requeridos');
+    const songs = db.prepare('SELECT * FROM songs ORDER BY title ASC').all() as Song[];
+    const people = listAssignablePeopleForActivity();
+    showFormError(res, 'El nombre y la fecha son requeridos');
+    return res.status(400).render('activity-form', {
+      activity: { name, activity_date: activityDate, activity_time: activityTime, detail },
+      songs,
+      people,
+      assignedSongs: buildAssignedSongsFromBody(req),
+      assignedPeople: buildAssignedPeopleFromBody(req),
+      roles: listMusicalRoleNames(),
+      fieldErrors: { name: !name, activity_date: !activityDate },
+      error: null,
+    });
   }
 
   const slug = generateUniqueActivitySlug(name);
@@ -832,13 +1077,13 @@ app.post('/admin/actividades', requireAuth, (req, res) => {
     db.prepare('INSERT INTO activity_songs (activity_id, song_id, position) VALUES (?, ?, ?)').run(activityId, item.songId, item.order);
   }
 
-  res.redirect(url('/admin/actividades'));
+  return flashRedirect(req, res, '/admin/actividades', 'success', 'Actividad creada correctamente');
 });
 
 app.post('/admin/actividades/:id', requireAuth, (req, res) => {
   const existing = db.prepare('SELECT * FROM activities WHERE id = ?').get(req.params.id) as any | undefined;
   if (!existing) {
-    return res.status(404).send('Actividad no encontrada');
+    return flashRedirect(req, res, '/admin/actividades', 'error', 'Actividad no encontrada');
   }
 
   const name = (req.body.name || '').trim();
@@ -846,7 +1091,19 @@ app.post('/admin/actividades/:id', requireAuth, (req, res) => {
   const activityTime = (req.body.activity_time || '').trim();
   const detail = (req.body.detail || '').trim();
   if (!name || !activityDate) {
-    return res.status(400).send('El nombre y la fecha son requeridos');
+    const songs = db.prepare('SELECT * FROM songs ORDER BY title ASC').all() as Song[];
+    const people = listAssignablePeopleForActivity();
+    showFormError(res, 'El nombre y la fecha son requeridos');
+    return res.status(400).render('activity-form', {
+      activity: { ...existing, name, activity_date: activityDate, activity_time: activityTime, detail },
+      songs,
+      people,
+      assignedSongs: buildAssignedSongsFromBody(req),
+      assignedPeople: buildAssignedPeopleFromBody(req),
+      roles: listMusicalRoleNames(),
+      fieldErrors: { name: !name, activity_date: !activityDate },
+      error: null,
+    });
   }
 
   let slug = existing.slug;
@@ -874,7 +1131,7 @@ app.post('/admin/actividades/:id', requireAuth, (req, res) => {
     db.prepare('INSERT INTO activity_songs (activity_id, song_id, position) VALUES (?, ?, ?)').run(existing.id, item.songId, item.order);
   }
 
-  res.redirect(url('/admin/actividades'));
+  return flashRedirect(req, res, '/admin/actividades', 'success', 'Actividad actualizada correctamente');
 });
 
 app.post('/admin/actividades/:id/delete', requireAuth, (req, res) => {
@@ -882,7 +1139,7 @@ app.post('/admin/actividades/:id/delete', requireAuth, (req, res) => {
   db.prepare('DELETE FROM activity_people WHERE activity_id = ?').run(req.params.id);
   db.prepare('DELETE FROM activity_songs WHERE activity_id = ?').run(req.params.id);
   db.prepare('DELETE FROM activities WHERE id = ?').run(req.params.id);
-  res.redirect(url('/admin/actividades'));
+  return flashRedirect(req, res, '/admin/actividades', 'success', 'Actividad eliminada correctamente');
 });
 
 app.get('/actividades', (_req, res) => {
@@ -897,45 +1154,66 @@ app.get('/actividades', (_req, res) => {
 app.get('/actividades/:slug', (req, res) => {
   const activity = db.prepare('SELECT * FROM activities WHERE slug = ?').get(req.params.slug) as any | undefined;
   if (!activity) {
-    return res.status(404).send('Actividad no encontrada');
+    return flashRedirect(req, res, '/actividades', 'error', 'Actividad no encontrada');
   }
   const { songs, people } = getActivityRelations(activity.id);
   res.render('activity-detail', { activity, songs, people });
 });
 
 app.get('/admin/songs/new', requireAuth, (req, res) => {
-  res.render('form', { song: null, admin: true });
+  res.render('form', { song: null, admin: true, fieldErrors: {} });
 });
 
 app.post('/admin/songs', requireAuth, (req, res) => {
   const { title, artist, lyrics, audio_url } = req.body;
   if (!title || !title.trim()) {
-    return res.status(400).send('El título es requerido');
+    showFormError(res, 'El título es requerido');
+    return res.status(400).render('form', {
+      song: {
+        title: '',
+        artist: (artist || '').trim(),
+        lyrics: lyrics || '',
+        audio_url: (audio_url || '').trim(),
+      },
+      admin: true,
+      fieldErrors: { title: true },
+    });
   }
   const cleanTitle = title.trim();
   const slug = generateUniqueSlug(cleanTitle);
   db.prepare(
     'INSERT INTO songs (title, slug, artist, lyrics, audio_url) VALUES (?, ?, ?, ?, ?)'
   ).run(cleanTitle, slug, (artist || '').trim(), lyrics || '', (audio_url || '').trim());
-  res.redirect(url('/admin'));
+  return flashRedirect(req, res, '/admin', 'success', 'Canción creada correctamente');
 });
 
 app.get('/admin/songs/:slug/edit', requireAuth, (req, res) => {
   const song = db.prepare('SELECT * FROM songs WHERE slug = ?').get(req.params.slug) as Song | undefined;
   if (!song) {
-    return res.status(404).send('Canción no encontrada');
+    return flashRedirect(req, res, '/admin', 'error', 'Canción no encontrada');
   }
-  res.render('form', { song, admin: true });
+  res.render('form', { song, admin: true, fieldErrors: {} });
 });
 
 app.post('/admin/songs/:slug', requireAuth, (req, res) => {
   const { title, artist, lyrics, audio_url } = req.body;
-  if (!title || !title.trim()) {
-    return res.status(400).send('El título es requerido');
-  }
   const existing = db.prepare('SELECT * FROM songs WHERE slug = ?').get(req.params.slug) as Song | undefined;
   if (!existing) {
-    return res.status(404).send('Canción no encontrada');
+    return flashRedirect(req, res, '/admin', 'error', 'Canción no encontrada');
+  }
+  if (!title || !title.trim()) {
+    showFormError(res, 'El título es requerido');
+    return res.status(400).render('form', {
+      song: {
+        ...existing,
+        title: '',
+        artist: (artist || '').trim(),
+        lyrics: lyrics || '',
+        audio_url: (audio_url || '').trim(),
+      },
+      admin: true,
+      fieldErrors: { title: true },
+    });
   }
   const cleanTitle = title.trim();
   let slug = existing.slug;
@@ -945,12 +1223,12 @@ app.post('/admin/songs/:slug', requireAuth, (req, res) => {
   db.prepare(
     'UPDATE songs SET title = ?, slug = ?, artist = ?, lyrics = ?, audio_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?'
   ).run(cleanTitle, slug, (artist || '').trim(), lyrics || '', (audio_url || '').trim(), existing.id);
-  res.redirect(url('/admin'));
+  return flashRedirect(req, res, '/admin', 'success', 'Canción actualizada correctamente');
 });
 
 app.post('/admin/songs/:slug/delete', requireAuth, (req, res) => {
   db.prepare('DELETE FROM songs WHERE slug = ?').run(req.params.slug);
-  res.redirect(url('/admin'));
+  return flashRedirect(req, res, '/admin', 'success', 'Canción eliminada correctamente');
 });
 
 // ── Database Backup Routes ──
@@ -958,7 +1236,7 @@ app.post('/admin/songs/:slug/delete', requireAuth, (req, res) => {
 app.get('/admin/export', requireAuth, (req, res) => {
   const dbPath = path.join(__dirname, '..', 'data', 'setlists.db');
   if (!fs.existsSync(dbPath)) {
-    return res.status(404).send('Base de datos no encontrada');
+    return flashRedirect(req, res, '/admin', 'error', 'Base de datos no encontrada');
   }
   try {
     db.pragma('wal_checkpoint(TRUNCATE)');
@@ -971,7 +1249,7 @@ app.get('/admin/export', requireAuth, (req, res) => {
 
 app.post('/admin/import', requireAuth, upload.single('database'), (req, res) => {
   if (!req.file) {
-    return res.redirect(url('/admin?db_error=No+se+seleccionó+ningún+archivo'));
+    return flashRedirect(req, res, '/admin', 'error', 'No se seleccionó ningún archivo');
   }
   const dbPath = path.join(__dirname, '..', 'data', 'setlists.db');
   const uploadedPath = req.file.path;
@@ -979,11 +1257,11 @@ app.post('/admin/import', requireAuth, upload.single('database'), (req, res) => 
   const ext = path.extname(req.file.originalname).toLowerCase();
   if (!validExts.includes(ext)) {
     fs.unlinkSync(uploadedPath);
-    return res.redirect(url('/admin?db_error=El+archivo+debe+tener+extensión+.db+,+.sqlite+o+.sqlite3'));
+    return flashRedirect(req, res, '/admin', 'error', 'El archivo debe tener extensión .db, .sqlite o .sqlite3');
   }
   if (req.file.size > 50 * 1024 * 1024) {
     fs.unlinkSync(uploadedPath);
-    return res.redirect(url('/admin?db_error=El+archivo+es+demasiado+grande+(máximo+50MB)'));
+    return flashRedirect(req, res, '/admin', 'error', 'El archivo es demasiado grande (máximo 50MB)');
   }
   try {
     const testDb = require('better-sqlite3')(uploadedPath);
@@ -992,7 +1270,7 @@ app.post('/admin/import', requireAuth, upload.single('database'), (req, res) => 
     if (tables.length < 2) {
       testDb.close();
       fs.unlinkSync(uploadedPath);
-      return res.redirect(url('/admin?db_error=El+archivo+no+es+una+base+de+datos+válida+(debe+contener+las+tablas+songs+y+users)'));
+      return flashRedirect(req, res, '/admin', 'error', 'El archivo no es una base de datos válida (debe contener las tablas songs y users)');
     }
     testDb.close();
     db.close();
@@ -1001,13 +1279,13 @@ app.post('/admin/import', requireAuth, upload.single('database'), (req, res) => 
     try { fs.unlinkSync(dbPath + '-shm'); } catch {}
     fs.unlinkSync(uploadedPath);
     db = openDatabase();
-    res.redirect(url('/admin?db_success=Base+de+datos+importada+correctamente.+Reinicia+el+servidor+para+que+los+cambios+surtan+efecto+completo.'));
+    return flashRedirect(req, res, '/admin', 'success', 'Base de datos importada correctamente. Reinicia el servidor para que los cambios surtan efecto completo.');
   } catch (err) {
     try { fs.unlinkSync(uploadedPath); } catch {}
     try {
       db = openDatabase();
     } catch {}
-    res.redirect(url('/admin?db_error=Error+al+importar:+'+encodeURIComponent((err as Error).message)));
+    return flashRedirect(req, res, '/admin', 'error', 'Error al importar: ' + ((err as Error).message || 'desconocido'));
   }
 });
 

@@ -112,6 +112,31 @@ db.exec(`
   )
 `);
 
+db.exec(`
+  CREATE TABLE IF NOT EXISTS musical_roles (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    position INTEGER NOT NULL DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )
+`);
+
+const defaultMusicalRoles = [
+  'Bajo',
+  'Guitarra eléctrica',
+  'Guitarra acústica',
+  'Batería',
+  'Voz principal',
+  'Voces',
+  'Técnico de sonido',
+];
+const musicalRoleCount = db.prepare('SELECT COUNT(*) as count FROM musical_roles').get() as { count: number };
+if (musicalRoleCount.count === 0) {
+  const insertRole = db.prepare('INSERT INTO musical_roles (name, position) VALUES (?, ?)');
+  defaultMusicalRoles.forEach((name, index) => {
+    insertRole.run(name, index + 1);
+  });
+}
 // Migration: add slug column if upgrading from a previous version
 const hasSlugCol = db.prepare("SELECT COUNT(*) as count FROM pragma_table_info('songs') WHERE name = 'slug'").get() as { count: number };
 if (hasSlugCol.count === 0) {

@@ -1,0 +1,62 @@
+<%
+  const base = typeof baseUrl !== 'undefined' ? baseUrl : '';
+  const isEdit = !!(role && role.id);
+  const errors = typeof fieldErrors !== 'undefined' && fieldErrors ? fieldErrors : {};
+  const formName = role && role.name ? role.name : '';
+%>
+
+<%- include('partials/head') %>
+
+<div class="page-header">
+  <div>
+    <h1><%= isEdit ? 'Editar rol' : 'Nuevo rol' %></h1>
+    <p class="page-subtitle">Define un rol musical disponible para personas y actividades</p>
+  </div>
+  <a href="<%= base %>/admin/ajustes" class="btn btn-secondary">← Volver</a>
+</div>
+
+<%- include('partials/admin-nav', { adminSection: 'settings' }) %>
+
+<div class="section-card">
+  <form
+    action="<%= base %><%= isEdit ? '/admin/ajustes/roles/' + role.id : '/admin/ajustes/roles' %>"
+    method="POST"
+    class="song-form"
+  >
+    <div class="form-group<%= errors.name ? ' is-invalid' : '' %>">
+      <label for="name">Nombre del rol *</label>
+      <input
+        type="text"
+        id="name"
+        name="name"
+        required
+        value="<%= formName %>"
+        placeholder="Ej: Teclado"
+        maxlength="80"
+        aria-invalid="<%= errors.name ? 'true' : 'false' %>"
+      >
+      <% if (errors.name) { %><p class="field-error">Revisa el nombre del rol</p><% } %>
+    </div>
+
+    <div class="form-actions">
+      <a href="<%= base %>/admin/ajustes" class="btn btn-secondary">Cancelar</a>
+      <button type="submit" class="btn btn-primary"><%= isEdit ? '💾 Guardar' : '✅ Crear' %></button>
+    </div>
+  </form>
+</div>
+
+<% if (isEdit) { %>
+  <section class="danger-zone">
+    <h2>Zona de peligro</h2>
+    <p>Al eliminar este rol se quitará de todas las personas y actividades donde esté asignado. Esta acción no se puede deshacer.</p>
+    <form
+      action="<%= base %>/admin/ajustes/roles/<%= role.id %>/delete"
+      method="POST"
+      onsubmit="return confirm(<%= JSON.stringify('¿Eliminar el rol «' + role.name + '»? Se quitará de personas y actividades.') %>)"
+    >
+      <button type="submit" class="btn btn-danger">Eliminar rol</button>
+    </form>
+  </section>
+<% } %>
+
+<%- include('partials/foot') %>

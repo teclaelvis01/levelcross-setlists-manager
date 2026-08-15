@@ -1,12 +1,18 @@
+<%
+  const errors = typeof fieldErrors !== 'undefined' && fieldErrors ? fieldErrors : {};
+  const isEdit = !!(song && song.id);
+  var _base = (typeof baseUrl !== 'undefined' ? baseUrl : '');
+%>
+
 <%- include('partials/head') %>
 
 <div class="form-container">
-  <h1><%= song ? '✏️ Editar canción' : '➕ Nueva canción' %></h1>
-  <% var _base = (typeof baseUrl !== 'undefined' ? baseUrl : ''); %>
-  <form action="<%= _base %><%= song ? '/admin/songs/' + song.slug : '/admin/songs' %>" method="POST" class="song-form">
-    <div class="form-group">
+  <h1><%= isEdit ? '✏️ Editar canción' : '➕ Nueva canción' %></h1>
+  <form action="<%= _base %><%= isEdit ? '/admin/songs/' + song.slug : '/admin/songs' %>" method="POST" class="song-form">
+    <div class="form-group<%= errors.title ? ' is-invalid' : '' %>">
       <label for="title">Título *</label>
-      <input type="text" id="title" name="title" required value="<%= song ? song.title : '' %>" placeholder="Nombre de la canción">
+      <input type="text" id="title" name="title" required value="<%= song ? song.title : '' %>" placeholder="Nombre de la canción" aria-invalid="<%= errors.title ? 'true' : 'false' %>">
+      <% if (errors.title) { %><p class="field-error">El título es obligatorio</p><% } %>
     </div>
 
     <div class="form-group">
@@ -30,7 +36,7 @@
 
     <div class="form-actions">
       <a href="<%= _base %>/admin" class="btn btn-secondary">Cancelar</a>
-      <button type="submit" class="btn btn-primary"><%= song ? '💾 Guardar' : '✅ Crear' %></button>
+      <button type="submit" class="btn btn-primary"><%= isEdit ? '💾 Guardar' : '✅ Crear' %></button>
     </div>
   </form>
 </div>
