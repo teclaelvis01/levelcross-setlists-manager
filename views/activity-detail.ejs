@@ -23,6 +23,9 @@
       </div>
     </div>
     <div class="viewer__actions">
+      <% if (typeof canAccess === 'function' ? canAccess('activities', 'write') : (typeof isAuthenticated !== 'undefined' && isAuthenticated)) { %>
+        <a href="<%= base %>/admin/actividades/<%= activity.id %>/editar" class="btn btn-secondary">✏️ Editar</a>
+      <% } %>
       <a href="<%= base %>/actividades" class="btn btn-secondary">← Volver</a>
     </div>
   </div>
