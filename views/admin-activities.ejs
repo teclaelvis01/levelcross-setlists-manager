@@ -12,7 +12,9 @@
     <p class="page-subtitle">Crea y gestiona ensayos, cultos y eventos</p>
   </div>
   <div class="header-actions">
-    <a href="<%= base %>/admin/actividades/nueva" class="btn btn-primary">+ Nueva actividad</a>
+    <% if (typeof canAccess === 'function' && canAccess('activities', 'write')) { %>
+      <a href="<%= base %>/admin/actividades/nueva" class="btn btn-primary">+ Nueva actividad</a>
+    <% } %>
   </div>
 </div>
 
@@ -21,7 +23,9 @@
 <% if (safeActivities.length === 0) { %>
   <div class="empty-state">
     <p>No hay actividades creadas aún</p>
-    <a href="<%= base %>/admin/actividades/nueva" class="btn btn-primary">+ Crear primera actividad</a>
+    <% if (typeof canAccess === 'function' && canAccess('activities', 'write')) { %>
+      <a href="<%= base %>/admin/actividades/nueva" class="btn btn-primary">+ Crear primera actividad</a>
+    <% } %>
   </div>
 <% } else { %>
   <div class="activity-timeline">
@@ -32,7 +36,9 @@
     %>
       <%- include('partials/activity-timeline-item', {
         activity,
-        href: base + '/admin/actividades/' + activity.id + '/editar',
+        href: (typeof canAccess === 'function' && canAccess('activities', 'write'))
+          ? (base + '/admin/actividades/' + activity.id + '/editar')
+          : (base + '/actividades/' + (activity.slug || activity.id)),
         maxAvatars,
         showDateMarker,
         isLast: index === safeActivities.length - 1

@@ -60,7 +60,14 @@ export interface User {
   email: string;
   google_sub: string | null;
   name: string;
+  avatar_url: string;
   created_at: string;
+}
+
+export interface UserPermission {
+  user_id: number;
+  section: string;
+  access: 'read' | 'write';
 }
 
 // Extend express-session to include our custom fields

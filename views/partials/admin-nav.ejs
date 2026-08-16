@@ -1,10 +1,19 @@
 <%
   const base = typeof baseUrl !== 'undefined' ? baseUrl : '';
   const active = typeof adminSection !== 'undefined' ? adminSection : '';
+  const can = typeof canAccess === 'function' ? canAccess : () => true;
 %>
 <nav class="section-nav" aria-label="Secciones de administración">
-  <a href="<%= base %>/admin" class="section-nav__link<%= active === 'songs' ? ' is-active' : '' %>">Canciones</a>
-  <a href="<%= base %>/admin/actividades" class="section-nav__link<%= active === 'activities' ? ' is-active' : '' %>">Actividades</a>
-  <a href="<%= base %>/admin/personas" class="section-nav__link<%= active === 'people' ? ' is-active' : '' %>">Personas</a>
-  <a href="<%= base %>/admin/ajustes" class="section-nav__link<%= active === 'settings' ? ' is-active' : '' %>">Ajustes</a>
+  <% if (can('songs', 'read')) { %>
+    <a href="<%= base %>/admin" class="section-nav__link<%= active === 'songs' ? ' is-active' : '' %>">Canciones</a>
+  <% } %>
+  <% if (can('activities', 'read')) { %>
+    <a href="<%= base %>/admin/actividades" class="section-nav__link<%= active === 'activities' ? ' is-active' : '' %>">Actividades</a>
+  <% } %>
+  <% if (can('people', 'read')) { %>
+    <a href="<%= base %>/admin/personas" class="section-nav__link<%= active === 'people' ? ' is-active' : '' %>">Personas</a>
+  <% } %>
+  <% if (can('settings', 'read')) { %>
+    <a href="<%= base %>/admin/ajustes" class="section-nav__link<%= active === 'settings' ? ' is-active' : '' %>">Ajustes</a>
+  <% } %>
 </nav>

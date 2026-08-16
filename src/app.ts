@@ -23,6 +23,19 @@ import {
   isGoogleOAuthConfigured,
   parseSignedOAuthState,
 } from './google-auth';
+import {
+  ADMIN_SECTIONS,
+  AccessLevel,
+  AdminSection,
+  SECTION_LABELS,
+  UserPermissions,
+  emptyPermissions,
+  fullWritePermissions,
+  hasAccess,
+  hasAnyAccess,
+  parsePermissionsFromBody,
+  permissionsFromRows,
+} from './permissions';
 import { MusicalRole, Song, User } from './types';
 
 let db = dbDefault;
@@ -807,6 +820,51 @@ function getRequestAuth(req: express.Request): { userId: number; email: string }
   return null;
 }
 
+function getUserById(id: number): User | undefined {
+  return db.prepare('SELECT * FROM users WHERE id = ?').get(id) as User | undefined;
+}
+
+function getUserByEmail(email: string): User | undefined {
+  return db.prepare('SELECT * FROM users WHERE email = ?').get(normalizeEmail(email)) as User | undefined;
+}
+
+function getUserPermissions(userId: number): UserPermissions {
+  const rows = db
+    .prepare('SELECT section, access FROM user_permissions WHERE user_id = ?')
+    .all(userId) as Array<{ section: string; access: string }>;
+  return permissionsFromRows(rows);
+}
+
+function replaceUserPermissions(userId: number, permissions: UserPermissions) {
+  const deleteStmt = db.prepare('DELETE FROM user_permissions WHERE user_id = ?');
+  const insertStmt = db.prepare(
+    'INSERT INTO user_permissions (user_id, section, access) VALUES (?, ?, ?)'
+  );
+  const tx = db.transaction(() => {
+    deleteStmt.run(userId);
+    for (const section of ADMIN_SECTIONS) {
+      const access = permissions[section];
+      if (access) {
+        insertStmt.run(userId, section, access);
+      }
+    }
+  });
+  tx();
+}
+
+function listUsersWithPermissions(): Array<User & { permissions: UserPermissions }> {
+  const users = db.prepare('SELECT * FROM users ORDER BY email ASC').all() as User[];
+  return users.map((user) => ({ ...user, permissions: getUserPermissions(user.id) }));
+}
+
+function firstAdminPath(permissions: UserPermissions): string {
+  if (hasAccess(permissions, 'songs', 'read')) return '/admin';
+  if (hasAccess(permissions, 'activities', 'read')) return '/admin/actividades';
+  if (hasAccess(permissions, 'people', 'read')) return '/admin/personas';
+  if (hasAccess(permissions, 'settings', 'read')) return '/admin/ajustes';
+  return '/login';
+}
+
 function sendClientRedirect(res: express.Response, redirectTo: string) {
   const safeUrl = escapeHtml(redirectTo);
   res
@@ -831,10 +889,34 @@ function requireAuth(req: express.Request, res: express.Response, next: express.
     const token = createSetupToken();
     return res.redirect(url(`/setup?token=${encodeURIComponent(token)}`));
   }
-  if (!getRequestAuth(req)) {
+  const auth = getRequestAuth(req);
+  if (!auth) {
     return res.redirect(url('/login'));
   }
+  const user = getUserById(auth.userId);
+  if (!user) {
+    res.clearCookie(getAuthCookieName(), { path: authCookieOptions.path });
+    return res.redirect(url('/login'));
+  }
+  const permissions = getUserPermissions(user.id);
+  if (!hasAnyAccess(permissions)) {
+    return flashRedirect(req, res, '/login', 'error', 'Tu cuenta no tiene permisos asignados.');
+  }
+  (req as express.Request & { currentUser?: User; currentPermissions?: UserPermissions }).currentUser = user;
+  (req as express.Request & { currentUser?: User; currentPermissions?: UserPermissions }).currentPermissions = permissions;
   next();
+}
+
+function requirePermission(section: AdminSection, access: AccessLevel) {
+  return (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const permissions =
+      (req as express.Request & { currentPermissions?: UserPermissions }).currentPermissions ||
+      emptyPermissions();
+    if (!hasAccess(permissions, section, access)) {
+      return flashRedirect(req, res, firstAdminPath(permissions), 'error', 'No tienes permiso para esa sección.');
+    }
+    next();
+  };
 }
 
 function normalizeEmail(email: string): string {
@@ -878,8 +960,23 @@ function url(pathName: string): string {
 
 app.use((req, res, next) => {
   const auth = getRequestAuth(req);
-  app.locals.isAuthenticated = !!auth;
-  app.locals.userEmail = auth?.email || '';
+  let user: User | undefined;
+  let permissions = emptyPermissions();
+  if (auth) {
+    user = getUserById(auth.userId);
+    if (user) {
+      permissions = getUserPermissions(user.id);
+    }
+  }
+
+  res.locals.isAuthenticated = !!user;
+  res.locals.userEmail = user?.email || '';
+  res.locals.userName = user?.name || '';
+  res.locals.userAvatar = user?.avatar_url || '';
+  res.locals.userPermissions = permissions;
+  res.locals.canAccess = (section: AdminSection, needed: AccessLevel) => hasAccess(permissions, section, needed);
+  res.locals.sectionLabels = SECTION_LABELS;
+
   if (req.session?.flash) {
     res.locals.flash = req.session.flash;
     delete req.session.flash;
@@ -1189,10 +1286,6 @@ function isSetupComplete(): boolean {
   return user.count > 0;
 }
 
-function getAdminUser(): User | undefined {
-  return db.prepare('SELECT * FROM users ORDER BY id ASC LIMIT 1').get() as User | undefined;
-}
-
 function establishSession(req: express.Request, res: express.Response, user: User, redirectTo: string) {
   const token = createAuthToken(user.id, user.email, SESSION_MAX_AGE_MS);
   res.cookie(getAuthCookieName(), token, authCookieOptions);
@@ -1250,7 +1343,8 @@ app.post('/setup', (req, res) => {
   }
 
   try {
-    db.prepare('INSERT INTO users (email, google_sub, name) VALUES (?, NULL, ?)').run(email, '');
+    const result = db.prepare('INSERT INTO users (email, google_sub, name, avatar_url) VALUES (?, NULL, ?, ?)').run(email, '', '');
+    replaceUserPermissions(Number(result.lastInsertRowid), fullWritePermissions());
     invalidateSetupToken(token);
     return flashRedirect(req, res, '/login', 'success', 'Administrador configurado. Inicia sesión con Google usando ese correo.');
   } catch {
@@ -1259,8 +1353,12 @@ app.post('/setup', (req, res) => {
 });
 
 app.get('/login', (req, res) => {
-  if (getRequestAuth(req)) {
-    return res.redirect(url('/admin'));
+  const auth = getRequestAuth(req);
+  if (auth) {
+    const user = getUserById(auth.userId);
+    if (user) {
+      return res.redirect(url(firstAdminPath(getUserPermissions(user.id))));
+    }
   }
   if (!isSetupComplete()) {
     return res.redirect(url('/admin'));
@@ -1282,7 +1380,38 @@ app.get('/login', (req, res) => {
 
   res.render('login', {
     googleConfigured: isGoogleOAuthConfigured(),
+    isDev,
+    devUsers: isDev ? listUsersWithPermissions().filter((user) => hasAnyAccess(user.permissions)) : [],
   });
+});
+
+app.post('/auth/dev-login', (req, res) => {
+  if (!isDev) {
+    return res.status(404).send('Not found');
+  }
+  if (!isSetupComplete()) {
+    return res.redirect(url('/admin'));
+  }
+
+  const requestedEmail = normalizeEmail(String(req.body.email || ''));
+  const user = requestedEmail
+    ? getUserByEmail(requestedEmail)
+    : (db.prepare('SELECT * FROM users ORDER BY id ASC LIMIT 1').get() as User | undefined);
+
+  if (!user) {
+    return flashRedirect(req, res, '/login', 'error', 'No hay un usuario registrado para entrar en modo desarrollo.');
+  }
+
+  const permissions = getUserPermissions(user.id);
+  if (!hasAnyAccess(permissions)) {
+    return flashRedirect(req, res, '/login', 'error', 'Ese usuario no tiene permisos asignados.');
+  }
+
+  if (!user.name) {
+    db.prepare('UPDATE users SET name = ? WHERE id = ?').run('Dev User', user.id);
+  }
+  const updated = getUserById(user.id) as User;
+  return establishSession(req, res, updated, url(firstAdminPath(permissions)));
 });
 
 app.get('/auth/google', async (req, res) => {
@@ -1341,14 +1470,24 @@ app.get('/auth/google/callback', async (req, res) => {
       return loginErrorRedirect(res, 'oauth_unverified');
     }
 
-    const admin = getAdminUser();
-    if (!admin || normalizeEmail(admin.email) !== profile.email) {
+    const user = getUserByEmail(profile.email);
+    if (!user) {
       return loginErrorRedirect(res, 'oauth_unauthorized');
     }
 
-    db.prepare('UPDATE users SET google_sub = ?, name = ? WHERE id = ?').run(profile.sub, profile.name || admin.name || '', admin.id);
-    const updated = db.prepare('SELECT * FROM users WHERE id = ?').get(admin.id) as User;
-    return establishSession(req, res, updated, url('/admin'));
+    const permissions = getUserPermissions(user.id);
+    if (!hasAnyAccess(permissions)) {
+      return loginErrorRedirect(res, 'oauth_unauthorized');
+    }
+
+    db.prepare('UPDATE users SET google_sub = ?, name = ?, avatar_url = ? WHERE id = ?').run(
+      profile.sub,
+      profile.name || user.name || '',
+      profile.avatarUrl || user.avatar_url || '',
+      user.id
+    );
+    const updated = getUserById(user.id) as User;
+    return establishSession(req, res, updated, url(firstAdminPath(permissions)));
   } catch (error) {
     console.error('Google OAuth callback failed:', error);
     return loginErrorRedirect(res, 'oauth_callback');
@@ -1387,7 +1526,7 @@ app.get('/health', (_req, res) => {
 
 // ── Admin (Private) Routes ──
 
-app.get('/admin', requireAuth, (req, res) => {
+app.get('/admin', requireAuth, requirePermission('songs', 'read'), (req, res) => {
   const rawSearch = ((req.query.search as string) || '').trim();
   const search = rawSearch.length >= 3 ? rawSearch : '';
   const requestedPage = parseInt(req.query.page as string, 10) || 1;
@@ -1396,11 +1535,11 @@ app.get('/admin', requireAuth, (req, res) => {
   res.render('admin', { songs, search, currentPage, totalPages, totalCount, pageSize, hasPrev, hasNext });
 });
 
-app.get('/admin/actividades', requireAuth, (_req, res) => {
+app.get('/admin/actividades', requireAuth, requirePermission('activities', 'read'), (_req, res) => {
   res.render('admin-activities', { activities: listActivitiesWithPeople() });
 });
 
-app.get('/admin/personas', requireAuth, (req, res) => {
+app.get('/admin/personas', requireAuth, requirePermission('people', 'read'), (req, res) => {
   const search = ((req.query.search as string) || '').trim();
   const query = search.length >= 3 ? search.toLowerCase() : '';
   const allPeople = listActivePeopleWithRoles();
@@ -1413,11 +1552,11 @@ app.get('/admin/personas', requireAuth, (req, res) => {
   res.render('admin-people', { people, search: query ? search : '', totalCount: allPeople.length });
 });
 
-app.get('/admin/personas/nueva', requireAuth, (_req, res) => {
+app.get('/admin/personas/nueva', requireAuth, requirePermission('people', 'write'), (_req, res) => {
   res.render('admin-person-form', { person: null, roles: listMusicalRoleNames(), fieldErrors: {} });
 });
 
-app.post('/admin/personas', requireAuth, handlePersonPhotoUpload, (req, res) => {
+app.post('/admin/personas', requireAuth, requirePermission('people', 'write'), handlePersonPhotoUpload, (req, res) => {
   const name = (req.body.name || '').trim();
   const roles = collectSelectedRoles(req.body.roles);
   if (!name || roles.length === 0) {
@@ -1439,7 +1578,7 @@ app.post('/admin/personas', requireAuth, handlePersonPhotoUpload, (req, res) => 
   return flashRedirect(req, res, `/admin/personas/${personId}/editar`, 'success', 'Persona creada correctamente');
 });
 
-app.get('/admin/personas/:id/editar', requireAuth, (req, res) => {
+app.get('/admin/personas/:id/editar', requireAuth, requirePermission('people', 'write'), (req, res) => {
   const person = db.prepare('SELECT * FROM people WHERE id = ? AND deleted_at IS NULL').get(req.params.id) as any | undefined;
   if (!person) {
     return flashRedirect(req, res, '/admin/personas', 'error', 'Persona no encontrada');
@@ -1447,7 +1586,7 @@ app.get('/admin/personas/:id/editar', requireAuth, (req, res) => {
   return renderPersonForm(res, { ...person, roles: getPersonRoles(person.id) });
 });
 
-app.post('/admin/personas/:id', requireAuth, handlePersonPhotoUpload, (req, res) => {
+app.post('/admin/personas/:id', requireAuth, requirePermission('people', 'write'), handlePersonPhotoUpload, (req, res) => {
   const person = db.prepare('SELECT * FROM people WHERE id = ? AND deleted_at IS NULL').get(req.params.id) as any | undefined;
   if (!person) {
     if (req.file) deleteLocalPersonPhoto(`/uploads/people/${req.file.filename}`);
@@ -1474,7 +1613,7 @@ app.post('/admin/personas/:id', requireAuth, handlePersonPhotoUpload, (req, res)
   return flashRedirect(req, res, `/admin/personas/${person.id}/editar`, 'success', 'Persona actualizada correctamente');
 });
 
-app.post('/admin/personas/:id/delete', requireAuth, (req, res) => {
+app.post('/admin/personas/:id/delete', requireAuth, requirePermission('people', 'write'), (req, res) => {
   const person = db.prepare('SELECT * FROM people WHERE id = ? AND deleted_at IS NULL').get(req.params.id) as any | undefined;
   if (!person) {
     return flashRedirect(req, res, '/admin/personas', 'error', 'Persona no encontrada');
@@ -1483,15 +1622,171 @@ app.post('/admin/personas/:id/delete', requireAuth, (req, res) => {
   return flashRedirect(req, res, '/admin/personas', 'success', 'Persona eliminada correctamente');
 });
 
-app.get('/admin/ajustes', requireAuth, (_req, res) => {
+app.get('/admin/ajustes', requireAuth, requirePermission('settings', 'read'), (_req, res) => {
   const roles = listMusicalRoles();
   res.render('admin-settings', {
     roles,
+    users: listUsersWithPermissions(),
     multimediaCount: countMultimediaFiles(),
   });
 });
 
-app.get('/admin/ajustes/roles/nuevo', requireAuth, (_req, res) => {
+app.get('/admin/ajustes/usuarios/nuevo', requireAuth, requirePermission('settings', 'write'), (_req, res) => {
+  res.render('admin-user-form', {
+    user: null,
+    permissions: emptyPermissions(),
+    fieldErrors: {},
+    sectionLabels: SECTION_LABELS,
+    sections: ADMIN_SECTIONS,
+  });
+});
+
+app.post('/admin/ajustes/usuarios', requireAuth, requirePermission('settings', 'write'), (req, res) => {
+  const email = normalizeEmail(String(req.body.email || ''));
+  const permissions = parsePermissionsFromBody(req.body);
+  if (!email || !isValidEmail(email)) {
+    showFormError(res, 'Introduce un correo válido');
+    return res.status(400).render('admin-user-form', {
+      user: { email },
+      permissions,
+      fieldErrors: { email: true },
+      sectionLabels: SECTION_LABELS,
+      sections: ADMIN_SECTIONS,
+    });
+  }
+  if (!hasAnyAccess(permissions)) {
+    showFormError(res, 'Asigna al menos un permiso de lectura o escritura');
+    return res.status(400).render('admin-user-form', {
+      user: { email },
+      permissions,
+      fieldErrors: { permissions: true },
+      sectionLabels: SECTION_LABELS,
+      sections: ADMIN_SECTIONS,
+    });
+  }
+  if (getUserByEmail(email)) {
+    showFormError(res, 'Ya existe un usuario con ese correo');
+    return res.status(400).render('admin-user-form', {
+      user: { email },
+      permissions,
+      fieldErrors: { email: true },
+      sectionLabels: SECTION_LABELS,
+      sections: ADMIN_SECTIONS,
+    });
+  }
+  try {
+    const result = db.prepare('INSERT INTO users (email, google_sub, name, avatar_url) VALUES (?, NULL, ?, ?)').run(email, '', '');
+    replaceUserPermissions(Number(result.lastInsertRowid), permissions);
+    return flashRedirect(req, res, '/admin/ajustes', 'success', 'Usuario creado. Podrá entrar con Google usando ese correo.');
+  } catch {
+    return flashRedirect(req, res, '/admin/ajustes/usuarios/nuevo', 'error', 'No se pudo crear el usuario.');
+  }
+});
+
+app.get('/admin/ajustes/usuarios/:id/editar', requireAuth, requirePermission('settings', 'write'), (req, res) => {
+  const user = getUserById(Number(req.params.id));
+  if (!user) {
+    return flashRedirect(req, res, '/admin/ajustes', 'error', 'Usuario no encontrado');
+  }
+  res.render('admin-user-form', {
+    user,
+    permissions: getUserPermissions(user.id),
+    fieldErrors: {},
+    sectionLabels: SECTION_LABELS,
+    sections: ADMIN_SECTIONS,
+  });
+});
+
+app.post('/admin/ajustes/usuarios/:id', requireAuth, requirePermission('settings', 'write'), (req, res) => {
+  const user = getUserById(Number(req.params.id));
+  if (!user) {
+    return flashRedirect(req, res, '/admin/ajustes', 'error', 'Usuario no encontrado');
+  }
+  const email = normalizeEmail(String(req.body.email || ''));
+  const permissions = parsePermissionsFromBody(req.body);
+  if (!email || !isValidEmail(email)) {
+    showFormError(res, 'Introduce un correo válido');
+    return res.status(400).render('admin-user-form', {
+      user: { ...user, email },
+      permissions,
+      fieldErrors: { email: true },
+      sectionLabels: SECTION_LABELS,
+      sections: ADMIN_SECTIONS,
+    });
+  }
+  if (!hasAnyAccess(permissions)) {
+    showFormError(res, 'Asigna al menos un permiso de lectura o escritura');
+    return res.status(400).render('admin-user-form', {
+      user: { ...user, email },
+      permissions,
+      fieldErrors: { permissions: true },
+      sectionLabels: SECTION_LABELS,
+      sections: ADMIN_SECTIONS,
+    });
+  }
+  const conflict = getUserByEmail(email);
+  if (conflict && conflict.id !== user.id) {
+    showFormError(res, 'Ya existe un usuario con ese correo');
+    return res.status(400).render('admin-user-form', {
+      user: { ...user, email },
+      permissions,
+      fieldErrors: { email: true },
+      sectionLabels: SECTION_LABELS,
+      sections: ADMIN_SECTIONS,
+    });
+  }
+
+  // Keep at least one user with settings write.
+  if (!hasAccess(permissions, 'settings', 'write')) {
+    const others = db
+      .prepare(
+        `SELECT COUNT(*) as count
+         FROM user_permissions
+         WHERE section = 'settings' AND access = 'write' AND user_id != ?`
+      )
+      .get(user.id) as { count: number };
+    if (others.count === 0) {
+      showFormError(res, 'Debe quedar al menos un usuario con escritura en Ajustes');
+      return res.status(400).render('admin-user-form', {
+        user: { ...user, email },
+        permissions,
+        fieldErrors: { permissions: true },
+        sectionLabels: SECTION_LABELS,
+        sections: ADMIN_SECTIONS,
+      });
+    }
+  }
+
+  db.prepare('UPDATE users SET email = ? WHERE id = ?').run(email, user.id);
+  replaceUserPermissions(user.id, permissions);
+  return flashRedirect(req, res, `/admin/ajustes/usuarios/${user.id}/editar`, 'success', 'Usuario actualizado correctamente');
+});
+
+app.post('/admin/ajustes/usuarios/:id/delete', requireAuth, requirePermission('settings', 'write'), (req, res) => {
+  const user = getUserById(Number(req.params.id));
+  if (!user) {
+    return flashRedirect(req, res, '/admin/ajustes', 'error', 'Usuario no encontrado');
+  }
+  const auth = getRequestAuth(req);
+  if (auth && auth.userId === user.id) {
+    return flashRedirect(req, res, '/admin/ajustes', 'error', 'No puedes eliminar tu propio usuario.');
+  }
+  const remainingAdmins = db
+    .prepare(
+      `SELECT COUNT(*) as count
+       FROM user_permissions
+       WHERE section = 'settings' AND access = 'write' AND user_id != ?`
+    )
+    .get(user.id) as { count: number };
+  if (remainingAdmins.count === 0) {
+    return flashRedirect(req, res, '/admin/ajustes', 'error', 'No puedes eliminar el último usuario con escritura en Ajustes.');
+  }
+  db.prepare('DELETE FROM user_permissions WHERE user_id = ?').run(user.id);
+  db.prepare('DELETE FROM users WHERE id = ?').run(user.id);
+  return flashRedirect(req, res, '/admin/ajustes', 'success', 'Usuario eliminado correctamente');
+});
+
+app.get('/admin/ajustes/roles/nuevo', requireAuth, requirePermission('settings', 'write'), (_req, res) => {
   res.render('admin-role-form', {
     role: null,
     fieldErrors: {},
@@ -1499,7 +1794,7 @@ app.get('/admin/ajustes/roles/nuevo', requireAuth, (_req, res) => {
   });
 });
 
-app.post('/admin/ajustes/roles', requireAuth, (req, res) => {
+app.post('/admin/ajustes/roles', requireAuth, requirePermission('settings', 'write'), (req, res) => {
   const name = (req.body.name || '').trim();
   const categories = listRoleCategories();
   const category = normalizeRoleCategory(req.body.category, categories);
@@ -1529,7 +1824,7 @@ app.post('/admin/ajustes/roles', requireAuth, (req, res) => {
   return flashRedirect(req, res, `/admin/ajustes/roles/${roleId}/editar`, 'success', 'Rol creado correctamente');
 });
 
-app.get('/admin/ajustes/roles/:id/editar', requireAuth, (req, res) => {
+app.get('/admin/ajustes/roles/:id/editar', requireAuth, requirePermission('settings', 'write'), (req, res) => {
   const role = getMusicalRoleById(Number(req.params.id));
   if (!role) {
     return flashRedirect(req, res, '/admin/ajustes', 'error', 'Rol no encontrado');
@@ -1541,7 +1836,7 @@ app.get('/admin/ajustes/roles/:id/editar', requireAuth, (req, res) => {
   });
 });
 
-app.post('/admin/ajustes/roles/:id', requireAuth, (req, res) => {
+app.post('/admin/ajustes/roles/:id', requireAuth, requirePermission('settings', 'write'), (req, res) => {
   const role = getMusicalRoleById(Number(req.params.id));
   if (!role) {
     return flashRedirect(req, res, '/admin/ajustes', 'error', 'Rol no encontrado');
@@ -1572,7 +1867,7 @@ app.post('/admin/ajustes/roles/:id', requireAuth, (req, res) => {
   return flashRedirect(req, res, `/admin/ajustes/roles/${role.id}/editar`, 'success', 'Rol actualizado correctamente');
 });
 
-app.post('/admin/ajustes/roles/:id/delete', requireAuth, (req, res) => {
+app.post('/admin/ajustes/roles/:id/delete', requireAuth, requirePermission('settings', 'write'), (req, res) => {
   const role = getMusicalRoleById(Number(req.params.id));
   if (!role) {
     return flashRedirect(req, res, '/admin/ajustes', 'error', 'Rol no encontrado');
@@ -1581,7 +1876,7 @@ app.post('/admin/ajustes/roles/:id/delete', requireAuth, (req, res) => {
   return flashRedirect(req, res, '/admin/ajustes', 'success', 'Rol eliminado correctamente');
 });
 
-app.get('/admin/actividades/nueva', requireAuth, (req, res) => {
+app.get('/admin/actividades/nueva', requireAuth, requirePermission('activities', 'write'), (req, res) => {
   const songs = db.prepare('SELECT * FROM songs ORDER BY title ASC').all() as Song[];
   const people = listAssignablePeopleForActivity();
   res.render('activity-form', {
@@ -1597,7 +1892,7 @@ app.get('/admin/actividades/nueva', requireAuth, (req, res) => {
   });
 });
 
-app.get('/admin/actividades/:id/editar', requireAuth, (req, res) => {
+app.get('/admin/actividades/:id/editar', requireAuth, requirePermission('activities', 'write'), (req, res) => {
   const { activity, songs: assignedSongs, people: assignedPeople } = getActivityRelations(Number(req.params.id));
   if (!activity) {
     return flashRedirect(req, res, '/admin/actividades', 'error', 'Actividad no encontrada');
@@ -1617,7 +1912,7 @@ app.get('/admin/actividades/:id/editar', requireAuth, (req, res) => {
   });
 });
 
-app.post('/admin/actividades', requireAuth, (req, res) => {
+app.post('/admin/actividades', requireAuth, requirePermission('activities', 'write'), (req, res) => {
   const name = (req.body.name || '').trim();
   const activityDate = (req.body.activity_date || '').trim();
   const activityTime = (req.body.activity_time || '').trim();
@@ -1657,7 +1952,7 @@ app.post('/admin/actividades', requireAuth, (req, res) => {
   }
 });
 
-app.post('/admin/actividades/:id', requireAuth, (req, res) => {
+app.post('/admin/actividades/:id', requireAuth, requirePermission('activities', 'write'), (req, res) => {
   const existing = db.prepare('SELECT * FROM activities WHERE id = ?').get(req.params.id) as any | undefined;
   if (!existing) {
     return flashRedirect(req, res, '/admin/actividades', 'error', 'Actividad no encontrada');
@@ -1712,7 +2007,7 @@ app.post('/admin/actividades/:id', requireAuth, (req, res) => {
   }
 });
 
-app.post('/admin/actividades/:id/delete', requireAuth, (req, res) => {
+app.post('/admin/actividades/:id/delete', requireAuth, requirePermission('activities', 'write'), (req, res) => {
   db.prepare('DELETE FROM activity_person_roles WHERE activity_id = ?').run(req.params.id);
   db.prepare('DELETE FROM activity_person_category_order WHERE activity_id = ?').run(req.params.id);
   db.prepare('DELETE FROM activity_people WHERE activity_id = ?').run(req.params.id);
@@ -1739,11 +2034,11 @@ app.get('/actividades/:slug', (req, res) => {
   });
 });
 
-app.get('/admin/songs/new', requireAuth, (req, res) => {
+app.get('/admin/songs/new', requireAuth, requirePermission('songs', 'write'), (req, res) => {
   res.render('form', { song: null, admin: true, fieldErrors: {} });
 });
 
-app.post('/admin/songs', requireAuth, (req, res) => {
+app.post('/admin/songs', requireAuth, requirePermission('songs', 'write'), (req, res) => {
   const { title, artist, lyrics, audio_url } = req.body;
   if (!title || !title.trim()) {
     showFormError(res, 'El título es requerido');
@@ -1766,7 +2061,7 @@ app.post('/admin/songs', requireAuth, (req, res) => {
   return flashRedirect(req, res, `/admin/songs/${slug}/edit`, 'success', 'Canción creada correctamente');
 });
 
-app.get('/admin/songs/:slug/edit', requireAuth, (req, res) => {
+app.get('/admin/songs/:slug/edit', requireAuth, requirePermission('songs', 'write'), (req, res) => {
   const song = db.prepare('SELECT * FROM songs WHERE slug = ?').get(req.params.slug) as Song | undefined;
   if (!song) {
     return flashRedirect(req, res, '/admin', 'error', 'Canción no encontrada');
@@ -1774,7 +2069,7 @@ app.get('/admin/songs/:slug/edit', requireAuth, (req, res) => {
   res.render('form', { song, admin: true, fieldErrors: {} });
 });
 
-app.post('/admin/songs/:slug', requireAuth, (req, res) => {
+app.post('/admin/songs/:slug', requireAuth, requirePermission('songs', 'write'), (req, res) => {
   const { title, artist, lyrics, audio_url } = req.body;
   const existing = db.prepare('SELECT * FROM songs WHERE slug = ?').get(req.params.slug) as Song | undefined;
   if (!existing) {
@@ -1805,14 +2100,14 @@ app.post('/admin/songs/:slug', requireAuth, (req, res) => {
   return flashRedirect(req, res, `/admin/songs/${slug}/edit`, 'success', 'Canción actualizada correctamente');
 });
 
-app.post('/admin/songs/:slug/delete', requireAuth, (req, res) => {
+app.post('/admin/songs/:slug/delete', requireAuth, requirePermission('songs', 'write'), (req, res) => {
   db.prepare('DELETE FROM songs WHERE slug = ?').run(req.params.slug);
   return flashRedirect(req, res, '/admin', 'success', 'Canción eliminada correctamente');
 });
 
 // ── Backup & multimedia Routes ──
 
-app.get('/admin/export', requireAuth, (_req, res) => {
+app.get('/admin/export', requireAuth, requirePermission('settings', 'write'), (_req, res) => {
   const dbPath = path.join(dataRoot, 'setlists.db');
   if (!fs.existsSync(dbPath)) {
     return flashRedirect(_req, res, '/admin/ajustes', 'error', 'Base de datos no encontrada');
@@ -1826,7 +2121,7 @@ app.get('/admin/export', requireAuth, (_req, res) => {
   res.download(dbPath, `setlists-backup-${dateStr}.db`);
 });
 
-app.post('/admin/import', requireAuth, backupUpload.single('database'), (req, res) => {
+app.post('/admin/import', requireAuth, requirePermission('settings', 'write'), backupUpload.single('database'), (req, res) => {
   if (!req.file) {
     return flashRedirect(req, res, '/admin/ajustes', 'error', 'Selecciona un archivo .db, .sqlite o .sqlite3 para continuar.', {
       title: 'No se importó la base de datos',
@@ -1894,7 +2189,7 @@ app.post('/admin/import', requireAuth, backupUpload.single('database'), (req, re
   }
 });
 
-app.get('/admin/ajustes/multimedia/export', requireAuth, (req, res) => {
+app.get('/admin/ajustes/multimedia/export', requireAuth, requirePermission('settings', 'write'), (req, res) => {
   if (countMultimediaFiles() === 0) {
     return flashRedirect(req, res, '/admin/ajustes', 'error', 'No hay fotos ni archivos para exportar todavía.', {
       title: 'Multimedia vacía',
@@ -1923,7 +2218,7 @@ app.get('/admin/ajustes/multimedia/export', requireAuth, (req, res) => {
   }
 });
 
-app.post('/admin/ajustes/multimedia/import', requireAuth, backupUpload.single('multimedia'), (req, res) => {
+app.post('/admin/ajustes/multimedia/import', requireAuth, requirePermission('settings', 'write'), backupUpload.single('multimedia'), (req, res) => {
   if (!req.file) {
     return flashRedirect(req, res, '/admin/ajustes', 'error', 'Selecciona un archivo ZIP para continuar.', {
       title: 'No se importó la multimedia',

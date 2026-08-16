@@ -17,8 +17,30 @@
         </span>
         Continuar con Google
       </a>
-    <% } else { %>
+    <% } else if (!(typeof isDev !== 'undefined' && isDev)) { %>
       <p class="auth-warning">Google OAuth no está configurado. Define <code>GOOGLE_CLIENT_ID</code>, <code>GOOGLE_CLIENT_SECRET</code> y <code>APP_URL</code>.</p>
+    <% } %>
+
+    <% if (typeof isDev !== 'undefined' && isDev) { %>
+      <div class="auth-dev">
+        <p class="auth-dev__label">Modo desarrollo</p>
+        <% const users = typeof devUsers !== 'undefined' ? devUsers : []; %>
+        <% if (users.length === 0) { %>
+          <p class="auth-warning">No hay usuarios con permisos. Completa el setup primero.</p>
+        <% } else { %>
+          <form action="<%= (typeof baseUrl !== 'undefined' ? baseUrl : '') %>/auth/dev-login" method="POST" class="auth-form">
+            <div class="form-group">
+              <label for="dev-email">Entrar como</label>
+              <select id="dev-email" name="email" required>
+                <% users.forEach((user) => { %>
+                  <option value="<%= user.email %>"><%= user.name ? (user.name + ' — ' + user.email) : user.email %></option>
+                <% }) %>
+              </select>
+            </div>
+            <button type="submit" class="btn btn-secondary btn-full">Entrar sin Google</button>
+          </form>
+        <% } %>
+      </div>
     <% } %>
   </div>
 </div>

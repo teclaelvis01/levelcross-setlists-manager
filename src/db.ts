@@ -34,30 +34,62 @@ function ensureUsersTable() {
         email TEXT NOT NULL UNIQUE,
         google_sub TEXT,
         name TEXT DEFAULT '',
+        avatar_url TEXT DEFAULT '',
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )
     `);
-    return;
+  } else {
+    const columns = db.prepare('PRAGMA table_info(users)').all() as { name: string }[];
+    const columnNames = new Set(columns.map((column) => column.name));
+    const isLegacySchema = columnNames.has('username') || columnNames.has('password_hash') || !columnNames.has('email');
+    if (isLegacySchema) {
+      // Existing password-based installs must re-run /setup with an admin email.
+      db.exec('DROP TABLE IF EXISTS user_permissions');
+      db.exec('DROP TABLE users');
+      db.exec(`
+        CREATE TABLE users (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          email TEXT NOT NULL UNIQUE,
+          google_sub TEXT,
+          name TEXT DEFAULT '',
+          avatar_url TEXT DEFAULT '',
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+    } else if (!columnNames.has('avatar_url')) {
+      db.exec(`ALTER TABLE users ADD COLUMN avatar_url TEXT DEFAULT ''`);
+    }
   }
 
-  const columns = db.prepare('PRAGMA table_info(users)').all() as { name: string }[];
-  const columnNames = new Set(columns.map((column) => column.name));
-  const isLegacySchema = columnNames.has('username') || columnNames.has('password_hash') || !columnNames.has('email');
-  if (!isLegacySchema) {
-    return;
-  }
-
-  // Existing password-based installs must re-run /setup with an admin email.
-  db.exec('DROP TABLE users');
   db.exec(`
-    CREATE TABLE users (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      email TEXT NOT NULL UNIQUE,
-      google_sub TEXT,
-      name TEXT DEFAULT '',
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    CREATE TABLE IF NOT EXISTS user_permissions (
+      user_id INTEGER NOT NULL,
+      section TEXT NOT NULL,
+      access TEXT NOT NULL CHECK (access IN ('read', 'write')),
+      PRIMARY KEY (user_id, section),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     )
   `);
+
+  // Existing single-admin installs: grant full write if they have no permission rows yet.
+  const usersWithoutPerms = db.prepare(`
+    SELECT u.id
+    FROM users u
+    LEFT JOIN user_permissions p ON p.user_id = u.id
+    GROUP BY u.id
+    HAVING COUNT(p.section) = 0
+  `).all() as { id: number }[];
+  const insertPerm = db.prepare(
+    'INSERT OR IGNORE INTO user_permissions (user_id, section, access) VALUES (?, ?, ?)'
+  );
+  const grantFull = db.transaction((userId: number) => {
+    for (const section of ['songs', 'activities', 'people', 'settings']) {
+      insertPerm.run(userId, section, 'write');
+    }
+  });
+  for (const row of usersWithoutPerms) {
+    grantFull(row.id);
+  }
 }
 
 ensureUsersTable();

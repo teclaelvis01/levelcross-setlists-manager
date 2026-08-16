@@ -110,6 +110,7 @@ export interface GoogleProfile {
   email: string;
   emailVerified: boolean;
   name: string;
+  avatarUrl: string;
 }
 
 export async function exchangeGoogleCallback(options: {
@@ -170,11 +171,13 @@ export async function exchangeGoogleCallback(options: {
     email?: string;
     email_verified?: boolean | string;
     name?: string;
+    picture?: string;
   };
 
   const email = typeof profile.email === 'string' ? profile.email.trim().toLowerCase() : '';
   const sub = typeof profile.sub === 'string' ? profile.sub : '';
   const name = typeof profile.name === 'string' ? profile.name.trim() : '';
+  const avatarUrl = typeof profile.picture === 'string' ? profile.picture.trim() : '';
   const emailVerified = profile.email_verified === true || profile.email_verified === 'true';
 
   if (!sub || !email) {
@@ -186,5 +189,6 @@ export async function exchangeGoogleCallback(options: {
     email,
     emailVerified,
     name,
+    avatarUrl,
   };
 }

@@ -13,7 +13,9 @@
     <p class="page-subtitle">Biblioteca de canciones del ministerio</p>
   </div>
   <div class="header-actions">
-    <a href="<%= base %>/admin/songs/new" class="btn btn-primary">+ Nueva canción</a>
+    <% if (typeof canAccess === 'function' && canAccess('songs', 'write')) { %>
+      <a href="<%= base %>/admin/songs/new" class="btn btn-primary">+ Nueva canción</a>
+    <% } %>
   </div>
 </div>
 
@@ -43,7 +45,7 @@
 <% if (safeSongs.length === 0) { %>
   <div class="empty-state">
     <p><%= safeSearch ? 'No hay resultados para esa búsqueda' : 'No hay canciones aún' %></p>
-    <% if (!safeSearch) { %>
+    <% if (!safeSearch && typeof canAccess === 'function' && canAccess('songs', 'write')) { %>
       <a href="<%= base %>/admin/songs/new" class="btn btn-primary">+ Crear primera canción</a>
     <% } %>
   </div>
@@ -67,10 +69,12 @@
           <% if (song.audio_url) { %>
             <a href="<%= song.audio_url %>" target="_blank" rel="noopener noreferrer" class="btn btn-icon" title="Escuchar">🔊</a>
           <% } %>
-          <a href="<%= base %>/admin/songs/<%= song.slug %>/edit" class="btn btn-icon" title="Editar">✏️</a>
-          <form action="<%= base %>/admin/songs/<%= song.slug %>/delete" method="POST" class="inline-form" onsubmit="return confirm('¿Eliminar esta canción?')">
-            <button type="submit" class="btn btn-icon btn-danger" title="Eliminar">🗑️</button>
-          </form>
+          <% if (typeof canAccess === 'function' && canAccess('songs', 'write')) { %>
+            <a href="<%= base %>/admin/songs/<%= song.slug %>/edit" class="btn btn-icon" title="Editar">✏️</a>
+            <form action="<%= base %>/admin/songs/<%= song.slug %>/delete" method="POST" class="inline-form" onsubmit="return confirm('¿Eliminar esta canción?')">
+              <button type="submit" class="btn btn-icon btn-danger" title="Eliminar">🗑️</button>
+            </form>
+          <% } %>
         </div>
       </div>
     <% }) %>

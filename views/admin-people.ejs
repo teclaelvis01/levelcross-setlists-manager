@@ -12,7 +12,9 @@
     <p class="page-subtitle">Músicos y roles disponibles para las actividades</p>
   </div>
   <div class="header-actions">
-    <a href="<%= base %>/admin/personas/nueva" class="btn btn-primary">+ Nueva persona</a>
+    <% if (typeof canAccess === 'function' && canAccess('people', 'write')) { %>
+      <a href="<%= base %>/admin/personas/nueva" class="btn btn-primary">+ Nueva persona</a>
+    <% } %>
   </div>
 </div>
 
@@ -40,7 +42,7 @@
 <% if (!people || people.length === 0) { %>
   <div class="empty-state">
     <p><%= safeSearch ? 'No hay resultados para esa búsqueda' : 'No hay personas creadas aún' %></p>
-    <% if (!safeSearch) { %>
+    <% if (!safeSearch && typeof canAccess === 'function' && canAccess('people', 'write')) { %>
       <a href="<%= base %>/admin/personas/nueva" class="btn btn-primary">+ Crear primera persona</a>
     <% } %>
   </div>
@@ -57,7 +59,12 @@
 
   <div class="person-list admin-list">
     <% people.forEach(personItem => { %>
+      <% const canEditPerson = typeof canAccess === 'function' && canAccess('people', 'write'); %>
+      <% if (canEditPerson) { %>
       <a href="<%= base %>/admin/personas/<%= personItem.id %>/editar" class="person-card admin-entity-card person-card--link">
+      <% } else { %>
+      <div class="person-card admin-entity-card">
+      <% } %>
         <div class="person-card__content">
           <% if (personItem.photo_url) { %>
             <img src="<%= photoSrc(personItem.photo_url) %>" alt="<%= personItem.name %>" class="person-photo" referrerpolicy="no-referrer">
@@ -73,7 +80,11 @@
             </div>
           </div>
         </div>
+      <% if (canEditPerson) { %>
       </a>
+      <% } else { %>
+      </div>
+      <% } %>
     <% }) %>
   </div>
 <% } %>
