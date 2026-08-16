@@ -8,10 +8,17 @@ import fs from 'fs';
 import AdmZip from 'adm-zip';
 import dbDefault, { openDatabase } from './db';
 import {
+  createAuthToken,
+  getAuthCookieName,
+  parseAuthToken,
+  readCookieValue,
+} from './auth-cookie';
+import {
   buildGoogleAuthorizationUrl,
   createPkcePair,
   createSignedOAuthState,
   exchangeGoogleCallback,
+  getAppUrl,
   getGoogleRedirectUri,
   isGoogleOAuthConfigured,
   parseSignedOAuthState,
@@ -112,13 +119,22 @@ app.use(
 app.use('/uploads', express.static(uploadsRoot));
 
 // Trust the reverse proxy (Coolify/Caddy) so that req.protocol, req.hostname etc. are correct
-app.set('trust proxy', true);
+app.set('trust proxy', 1);
 
+const appUrlIsHttps = getAppUrl().startsWith('https://');
 const sessionCookieSecure = process.env.SESSION_COOKIE_SECURE === 'true'
   ? true
   : process.env.SESSION_COOKIE_SECURE === 'false'
   ? false
-  : process.env.NODE_ENV === 'production';
+  : appUrlIsHttps || process.env.NODE_ENV === 'production';
+
+const authCookieOptions = {
+  httpOnly: true,
+  secure: sessionCookieSecure,
+  sameSite: 'lax' as const,
+  maxAge: SESSION_MAX_AGE_MS,
+  path: BASE_URL || '/',
+};
 
 app.use(session({
   name: 'setlists_session',
@@ -779,12 +795,43 @@ function loginErrorRedirect(res: express.Response, code: string) {
   return res.redirect(url(`/login?error=${encodeURIComponent(code)}`));
 }
 
+function getRequestAuth(req: express.Request): { userId: number; email: string } | null {
+  const token = readCookieValue(req.headers.cookie, getAuthCookieName());
+  const fromCookie = parseAuthToken(token);
+  if (fromCookie) {
+    return { userId: fromCookie.userId, email: fromCookie.email };
+  }
+  if (req.session?.userId && req.session.email) {
+    return { userId: req.session.userId, email: req.session.email };
+  }
+  return null;
+}
+
+function sendClientRedirect(res: express.Response, redirectTo: string) {
+  const safeUrl = escapeHtml(redirectTo);
+  res
+    .status(200)
+    .type('html')
+    .send(`<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="refresh" content="0;url=${safeUrl}">
+  <title>Redirigiendo…</title>
+</head>
+<body>
+  <p>Redirigiendo…</p>
+  <script>location.replace(${JSON.stringify(redirectTo)});</script>
+</body>
+</html>`);
+}
+
 function requireAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
   if (!isSetupComplete()) {
     const token = createSetupToken();
     return res.redirect(url(`/setup?token=${encodeURIComponent(token)}`));
   }
-  if (!req.session || !req.session.userId) {
+  if (!getRequestAuth(req)) {
     return res.redirect(url('/login'));
   }
   next();
@@ -830,18 +877,13 @@ function url(pathName: string): string {
 }
 
 app.use((req, res, next) => {
-  if (req.session) {
-    app.locals.isAuthenticated = !!req.session.userId;
-    app.locals.userEmail = req.session.email || '';
-    if (req.session.flash) {
-      res.locals.flash = req.session.flash;
-      delete req.session.flash;
-    } else {
-      res.locals.flash = null;
-    }
-  } else {
-    app.locals.isAuthenticated = false;
-    app.locals.userEmail = '';
+  const auth = getRequestAuth(req);
+  app.locals.isAuthenticated = !!auth;
+  app.locals.userEmail = auth?.email || '';
+  if (req.session?.flash) {
+    res.locals.flash = req.session.flash;
+    delete req.session.flash;
+  } else if (!res.locals.flash) {
     res.locals.flash = null;
   }
   next();
@@ -1152,19 +1194,22 @@ function getAdminUser(): User | undefined {
 }
 
 function establishSession(req: express.Request, res: express.Response, user: User, redirectTo: string) {
-  if (!req.session) {
-    return loginErrorRedirect(res, 'oauth_session');
+  const token = createAuthToken(user.id, user.email, SESSION_MAX_AGE_MS);
+  res.cookie(getAuthCookieName(), token, authCookieOptions);
+
+  if (req.session) {
+    req.session.userId = user.id;
+    req.session.email = user.email;
+    req.session.save((err) => {
+      if (err) {
+        console.error('Failed to save login session store (auth cookie still set):', err);
+      }
+      sendClientRedirect(res, redirectTo);
+    });
+    return;
   }
 
-  req.session.userId = user.id;
-  req.session.email = user.email;
-  req.session.save((err) => {
-    if (err) {
-      console.error('Failed to save login session:', err);
-      return loginErrorRedirect(res, 'oauth_session');
-    }
-    res.redirect(redirectTo);
-  });
+  sendClientRedirect(res, redirectTo);
 }
 
 app.get('/setup', (req, res) => {
@@ -1214,7 +1259,7 @@ app.post('/setup', (req, res) => {
 });
 
 app.get('/login', (req, res) => {
-  if (req.session && req.session.userId) {
+  if (getRequestAuth(req)) {
     return res.redirect(url('/admin'));
   }
   if (!isSetupComplete()) {
@@ -1311,9 +1356,14 @@ app.get('/auth/google/callback', async (req, res) => {
 });
 
 app.get('/logout', (req, res) => {
-  req.session.destroy(() => {
-    res.redirect(url('/'));
-  });
+  res.clearCookie(getAuthCookieName(), { path: authCookieOptions.path });
+  if (req.session) {
+    req.session.destroy(() => {
+      res.redirect(url('/'));
+    });
+    return;
+  }
+  res.redirect(url('/'));
 });
 
 app.get('/health', (_req, res) => {
