@@ -2,6 +2,34 @@
   const base = typeof baseUrl !== 'undefined' ? baseUrl : '';
   const isEdit = !!(activity && activity.id);
   const errors = typeof fieldErrors !== 'undefined' && fieldErrors ? fieldErrors : {};
+  const detailsOpen = !isEdit || !!(errors.name || errors.activity_date);
+  const actName = activity && activity.name ? String(activity.name) : '';
+  const actDate = activity && activity.activity_date ? String(activity.activity_date) : '';
+  const actTime = activity && activity.activity_time ? String(activity.activity_time) : '';
+  const actDetail = activity && activity.detail ? String(activity.detail).trim() : '';
+  const formatDateEs = (iso) => {
+    if (!iso) return '';
+    const parts = String(iso).split('-');
+    if (parts.length !== 3) return iso;
+    return parts[2] + '/' + parts[1] + '/' + parts[0];
+  };
+  const detailsSummaryParts = [];
+  if (actName) detailsSummaryParts.push(actName);
+  if (actDate) detailsSummaryParts.push(formatDateEs(actDate) + (actTime ? ' · ' + actTime + 'h' : ''));
+  if (!actName && !actDate) detailsSummaryParts.push('Completa nombre y fecha');
+  else if (actDetail) detailsSummaryParts.push('Con detalle');
+  const detailsSummary = detailsSummaryParts.join(' · ');
+  const selectedPeoplePreview = typeof assignedPeople !== 'undefined' && assignedPeople ? assignedPeople : [];
+  const peoplePreviewNames = selectedPeoplePreview.map((person) => person.name).filter(Boolean);
+  let peopleSummary = 'Ninguna persona asignada · Clic para editar';
+  if (peoplePreviewNames.length === 1) {
+    peopleSummary = peoplePreviewNames[0] + ' · Clic para editar';
+  } else if (peoplePreviewNames.length === 2) {
+    peopleSummary = peoplePreviewNames.join(' y ') + ' · Clic para editar';
+  } else if (peoplePreviewNames.length > 2) {
+    peopleSummary = peoplePreviewNames.slice(0, 2).join(', ') + ' y ' + (peoplePreviewNames.length - 2) + ' más · Clic para editar';
+  }
+  const selectedSongsPreview = typeof assignedSongs !== 'undefined' && assignedSongs ? assignedSongs : [];
 %>
 
 <%- include('partials/head') %>
@@ -21,198 +49,234 @@
 
 <%- include('partials/admin-nav', { adminSection: 'activities' }) %>
 
-<form action="<%= base %><%= isEdit ? '/admin/actividades/' + activity.id : '/admin/actividades' %>" method="POST" class="song-form">
-  <div class="section-card">
-    <div class="form-group<%= errors.name ? ' is-invalid' : '' %>">
-      <label for="name">Nombre de la actividad *</label>
-      <input type="text" id="name" name="name" required value="<%= activity ? activity.name : '' %>" placeholder="Ej: Reunión de oración" aria-invalid="<%= errors.name ? 'true' : 'false' %>">
-      <% if (errors.name) { %><p class="field-error">El nombre es obligatorio</p><% } %>
-    </div>
-
-    <div class="form-group<%= errors.activity_date ? ' is-invalid' : '' %>">
-      <label for="activity_date">Fecha *</label>
-      <input type="date" id="activity_date" name="activity_date" required value="<%= activity ? activity.activity_date : '' %>" aria-invalid="<%= errors.activity_date ? 'true' : 'false' %>">
-      <% if (errors.activity_date) { %><p class="field-error">La fecha es obligatoria</p><% } %>
-    </div>
-
-    <div class="form-group">
-      <label for="activity_time">Hora</label>
-      <input type="time" id="activity_time" name="activity_time" value="<%= activity ? activity.activity_time : '' %>">
-    </div>
-
-    <div class="form-group">
-      <label for="detail">Detalle</label>
-      <textarea id="detail" name="detail" rows="4" placeholder="Información adicional, objetivo, tipo de culto, etc."><%= activity ? activity.detail : '' %></textarea>
-    </div>
-  </div>
-
-  <div class="section-card">
-    <h2>👥 Personas asignadas</h2>
-    <% if (!people || people.length === 0) { %>
-      <div class="empty-state compact">
-        <p>No hay personas creadas. Crea personas primero desde el panel de admin.</p>
+<form action="<%= base %><%= isEdit ? '/admin/actividades/' + activity.id : '/admin/actividades' %>" method="POST" class="song-form activity-editor">
+  <div class="activity-editor__meta">
+  <details class="form-panel" data-form-panel="details"<%= detailsOpen ? ' open' : '' %>>
+    <summary class="form-panel__summary">
+      <div class="form-panel__heading">
+        <h2>Detalles de la actividad</h2>
+        <p class="help-text" data-details-summary><%= detailsSummary %></p>
       </div>
-    <% } else {
-      const selectedPeople = typeof assignedPeople !== 'undefined' && assignedPeople ? assignedPeople : [];
-      const selectedPeopleIds = selectedPeople.map((person) => person.id);
-    %>
-      <p class="help-text">Añade personas desde la lista. Arrastra las asignadas para definir el orden. Elige qué roles cumplirán en esta actividad.</p>
+      <span class="form-panel__hint">Editar</span>
+    </summary>
+    <div class="form-panel__body">
+      <div class="form-group<%= errors.name ? ' is-invalid' : '' %>">
+        <label for="name">Nombre de la actividad *</label>
+        <input type="text" id="name" name="name" required value="<%= activity ? activity.name : '' %>" placeholder="Ej: Reunión de oración" aria-invalid="<%= errors.name ? 'true' : 'false' %>" data-details-field="name">
+        <% if (errors.name) { %><p class="field-error">El nombre es obligatorio</p><% } %>
+      </div>
 
-      <div class="setlist-builder" data-people-builder>
-        <div class="setlist-ordered-wrap">
-          <div class="setlist-ordered-head">
-            <strong>Asignadas</strong>
-            <span class="setlist-ordered-count" data-people-count><%= selectedPeople.length %></span>
-          </div>
-          <ul class="setlist-ordered" data-people-assigned>
-            <% if (selectedPeople.length === 0) { %>
-              <li class="setlist-empty" data-people-empty>Todavía no hay personas. Elige alguna abajo.</li>
-            <% } %>
-            <% selectedPeople.forEach((person) => {
-              const availableRoles = person.roles || [];
-              const selectedRoles = Array.isArray(person.activityRoles)
-                ? person.activityRoles
-                : availableRoles;
-              const initial = (person.name || 'P').charAt(0).toUpperCase();
-              const photo = person.photo_url ? photoSrc(person.photo_url) : '';
-            %>
-              <li
-                class="setlist-item setlist-item--person"
-                draggable="true"
-                data-person-item
-                data-person-id="<%= person.id %>"
-                data-person-name="<%= person.name %>"
-                data-person-photo="<%= photo %>"
-                data-person-initial="<%= initial %>"
-                data-person-roles="<%= JSON.stringify(availableRoles) %>"
-              >
-                <span class="setlist-item__handle" aria-hidden="true" title="Arrastrar">⋮⋮</span>
-                <% if (photo) { %>
-                  <img src="<%= photo %>" alt="" class="setlist-item__avatar" referrerpolicy="no-referrer" draggable="false">
-                <% } else { %>
-                  <span class="setlist-item__avatar setlist-item__avatar--fallback" aria-hidden="true"><%= initial %></span>
-                <% } %>
-                <div class="setlist-item__info">
-                  <strong><%= person.name %></strong>
-                  <% if (availableRoles.length > 0) { %>
-                    <div class="chip-selector setlist-item__roles" data-person-roles>
-                      <!-- Prefixed person key so qs keeps an object; hidden marks submitted when all unchecked -->
-                      <input type="hidden" name="person_roles[p<%= person.id %>][]" value="">
-                      <% availableRoles.forEach((role) => { %>
-                        <label class="chip-option" data-role-chip>
-                          <input
-                            type="checkbox"
-                            name="person_roles[p<%= person.id %>][]"
-                            value="<%= role %>"
-                            <%= selectedRoles.includes(role) ? 'checked' : '' %>
-                            data-person-role
-                          >
-                          <span><%= role %></span>
-                        </label>
-                      <% }) %>
-                    </div>
+      <div class="form-group<%= errors.activity_date ? ' is-invalid' : '' %>">
+        <label for="activity_date">Fecha *</label>
+        <input type="date" id="activity_date" name="activity_date" required value="<%= activity ? activity.activity_date : '' %>" aria-invalid="<%= errors.activity_date ? 'true' : 'false' %>" data-details-field="date">
+        <% if (errors.activity_date) { %><p class="field-error">La fecha es obligatoria</p><% } %>
+      </div>
+
+      <div class="form-group">
+        <label for="activity_time">Hora</label>
+        <input type="time" id="activity_time" name="activity_time" value="<%= activity ? activity.activity_time : '' %>" data-details-field="time">
+      </div>
+
+      <div class="form-group">
+        <label for="detail">Detalle</label>
+        <textarea id="detail" name="detail" rows="4" placeholder="Información adicional, objetivo, tipo de culto, etc." data-details-field="detail"><%= activity ? activity.detail : '' %></textarea>
+      </div>
+    </div>
+  </details>
+  <details class="form-panel" data-form-panel="people">
+    <summary class="form-panel__summary">
+      <div class="form-panel__heading">
+        <h2>👥 Personas asignadas</h2>
+        <p class="help-text" data-people-summary><%= peopleSummary %></p>
+      </div>
+      <div class="form-panel__avatars" data-people-summary-avatars<%= selectedPeoplePreview.length === 0 ? ' hidden' : '' %>>
+        <% selectedPeoplePreview.slice(0, 4).forEach((person) => {
+          const initial = (person.name || 'P').charAt(0).toUpperCase();
+          const photo = person.photo_url ? photoSrc(person.photo_url) : '';
+        %>
+          <% if (photo) { %>
+            <img class="form-panel__avatar" src="<%= photo %>" alt="" width="28" height="28" referrerpolicy="no-referrer">
+          <% } else { %>
+            <span class="form-panel__avatar form-panel__avatar--fallback" aria-hidden="true"><%= initial %></span>
+          <% } %>
+        <% }) %>
+      </div>
+      <span class="form-panel__badge" data-people-summary-count><%= selectedPeoplePreview.length %></span>
+    </summary>
+    <div class="form-panel__body">
+      <% if (!people || people.length === 0) { %>
+        <div class="empty-state compact">
+          <p>No hay personas creadas. Crea personas primero desde el panel de admin.</p>
+        </div>
+      <% } else {
+        const selectedPeople = selectedPeoplePreview;
+        const selectedPeopleIds = selectedPeople.map((person) => person.id);
+      %>
+        <p class="help-text">Añade personas desde la lista. Arrastra las asignadas para definir el orden. Elige qué roles cumplirán en esta actividad.</p>
+
+        <div class="setlist-builder" data-people-builder>
+          <div class="setlist-ordered-wrap">
+            <div class="setlist-ordered-head">
+              <strong>Asignadas</strong>
+              <span class="setlist-ordered-count" data-people-count><%= selectedPeople.length %></span>
+            </div>
+            <ul class="setlist-ordered" data-people-assigned>
+              <% if (selectedPeople.length === 0) { %>
+                <li class="setlist-empty" data-people-empty>Todavía no hay personas. Elige alguna abajo.</li>
+              <% } %>
+              <% selectedPeople.forEach((person) => {
+                const availableRoles = person.roles || [];
+                const selectedRoles = Array.isArray(person.activityRoles)
+                  ? person.activityRoles
+                  : availableRoles;
+                const initial = (person.name || 'P').charAt(0).toUpperCase();
+                const photo = person.photo_url ? photoSrc(person.photo_url) : '';
+              %>
+                <li
+                  class="setlist-item setlist-item--person"
+                  draggable="true"
+                  data-person-item
+                  data-person-id="<%= person.id %>"
+                  data-person-name="<%= person.name %>"
+                  data-person-photo="<%= photo %>"
+                  data-person-initial="<%= initial %>"
+                  data-person-roles="<%= JSON.stringify(availableRoles) %>"
+                >
+                  <span class="setlist-item__handle" aria-hidden="true" title="Arrastrar">⋮⋮</span>
+                  <% if (photo) { %>
+                    <img src="<%= photo %>" alt="" class="setlist-item__avatar" referrerpolicy="no-referrer" draggable="false">
                   <% } else { %>
-                    <small>Sin roles configurados</small>
+                    <span class="setlist-item__avatar setlist-item__avatar--fallback" aria-hidden="true"><%= initial %></span>
                   <% } %>
-                </div>
-                <button type="button" class="setlist-item__remove" data-person-remove aria-label="Quitar <%= person.name %>">×</button>
-                <input type="hidden" name="person_ids" value="<%= person.id %>">
-              </li>
-            <% }) %>
-          </ul>
-        </div>
+                  <div class="setlist-item__info">
+                    <strong><%= person.name %></strong>
+                    <% if (availableRoles.length > 0) { %>
+                      <div class="chip-selector setlist-item__roles" data-person-roles>
+                        <!-- Prefixed person key so qs keeps an object; hidden marks submitted when all unchecked -->
+                        <input type="hidden" name="person_roles[p<%= person.id %>][]" value="">
+                        <% availableRoles.forEach((role) => { %>
+                          <label class="chip-option" data-role-chip>
+                            <input
+                              type="checkbox"
+                              name="person_roles[p<%= person.id %>][]"
+                              value="<%= role %>"
+                              <%= selectedRoles.includes(role) ? 'checked' : '' %>
+                              data-person-role
+                            >
+                            <span><%= role %></span>
+                          </label>
+                        <% }) %>
+                      </div>
+                    <% } else { %>
+                      <small>Sin roles configurados</small>
+                    <% } %>
+                  </div>
+                  <button type="button" class="setlist-item__remove" data-person-remove aria-label="Quitar <%= person.name %>">×</button>
+                  <input type="hidden" name="person_ids" value="<%= person.id %>">
+                </li>
+              <% }) %>
+            </ul>
+          </div>
 
-        <div class="setlist-library-wrap" data-list-filter>
-          <div class="setlist-ordered-head">
-            <strong>Disponibles</strong>
-            <span class="help-text" style="margin:0">Clic para añadir</span>
-          </div>
-          <div class="search-bar search-bar--compact search-bar--full" style="margin-bottom:10px">
-            <input
-              type="search"
-              data-list-filter-input
-              placeholder="Escribe al menos 3 caracteres para buscar..."
-              autocomplete="off"
-            >
-          </div>
-          <div class="setlist-library" data-people-library data-list-filter-list>
-            <% people.forEach((person) => {
-              if (selectedPeopleIds.includes(person.id)) return;
-              const availableRoles = person.roles || [];
-              const initial = (person.name || 'P').charAt(0).toUpperCase();
-              const photo = person.photo_url ? photoSrc(person.photo_url) : '';
-              const rolesLabel = availableRoles.length ? availableRoles.join(' · ') : 'Sin roles';
-              const filterText = [person.name].concat(availableRoles).filter(Boolean).join(' ');
-            %>
-              <button
-                type="button"
-                class="setlist-pool-item setlist-pool-item--person"
-                data-person-add
-                data-person-id="<%= person.id %>"
-                data-person-name="<%= person.name %>"
-                data-person-photo="<%= photo %>"
-                data-person-initial="<%= initial %>"
-                data-person-roles="<%= JSON.stringify(availableRoles) %>"
-                data-list-filter-item
-                data-filter-text="<%= filterText %>"
+          <div class="setlist-library-wrap" data-list-filter>
+            <div class="setlist-ordered-head">
+              <strong>Disponibles</strong>
+              <span class="help-text" style="margin:0">Clic para añadir</span>
+            </div>
+            <div class="search-bar search-bar--compact search-bar--full" style="margin-bottom:10px">
+              <input
+                type="search"
+                data-list-filter-input
+                placeholder="Escribe al menos 3 caracteres para buscar..."
+                autocomplete="off"
               >
-                <% if (photo) { %>
-                  <img src="<%= photo %>" alt="" class="setlist-pool-item__avatar" referrerpolicy="no-referrer">
-                <% } else { %>
-                  <span class="setlist-pool-item__avatar setlist-pool-item__avatar--fallback" aria-hidden="true"><%= initial %></span>
-                <% } %>
-                <span class="setlist-pool-item__body">
-                  <span class="setlist-pool-item__title"><%= person.name %></span>
-                  <small class="setlist-pool-item__artist"><%= rolesLabel %></small>
-                </span>
-                <span class="setlist-pool-item__add" aria-hidden="true">+</span>
-              </button>
-            <% }) %>
-          </div>
-          <div class="empty-state compact" data-list-filter-empty hidden style="margin-top:8px">
-            <p>No hay personas que coincidan con la búsqueda.</p>
+            </div>
+            <div class="setlist-library" data-people-library data-list-filter-list>
+              <% people.forEach((person) => {
+                if (selectedPeopleIds.includes(person.id)) return;
+                const availableRoles = person.roles || [];
+                const initial = (person.name || 'P').charAt(0).toUpperCase();
+                const photo = person.photo_url ? photoSrc(person.photo_url) : '';
+                const rolesLabel = availableRoles.length ? availableRoles.join(' · ') : 'Sin roles';
+                const filterText = [person.name].concat(availableRoles).filter(Boolean).join(' ');
+              %>
+                <button
+                  type="button"
+                  class="setlist-pool-item setlist-pool-item--person"
+                  data-person-add
+                  data-person-id="<%= person.id %>"
+                  data-person-name="<%= person.name %>"
+                  data-person-photo="<%= photo %>"
+                  data-person-initial="<%= initial %>"
+                  data-person-roles="<%= JSON.stringify(availableRoles) %>"
+                  data-list-filter-item
+                  data-filter-text="<%= filterText %>"
+                >
+                  <% if (photo) { %>
+                    <img src="<%= photo %>" alt="" class="setlist-pool-item__avatar" referrerpolicy="no-referrer">
+                  <% } else { %>
+                    <span class="setlist-pool-item__avatar setlist-pool-item__avatar--fallback" aria-hidden="true"><%= initial %></span>
+                  <% } %>
+                  <span class="setlist-pool-item__body">
+                    <span class="setlist-pool-item__title"><%= person.name %></span>
+                    <small class="setlist-pool-item__artist"><%= rolesLabel %></small>
+                  </span>
+                  <span class="setlist-pool-item__add" aria-hidden="true">+</span>
+                </button>
+              <% }) %>
+            </div>
+            <div class="empty-state compact" data-list-filter-empty hidden style="margin-top:8px">
+              <p>No hay personas que coincidan con la búsqueda.</p>
+            </div>
           </div>
         </div>
-      </div>
 
-      <template data-people-item-template>
-        <li class="setlist-item setlist-item--person" draggable="true" data-person-item>
-          <span class="setlist-item__handle" aria-hidden="true" title="Arrastrar">⋮⋮</span>
-          <span class="setlist-item__avatar setlist-item__avatar--fallback is-hidden" data-avatar-fallback aria-hidden="true"></span>
-          <img src="" alt="" class="setlist-item__avatar is-hidden" data-avatar-img referrerpolicy="no-referrer" draggable="false">
-          <div class="setlist-item__info">
-            <strong data-name></strong>
-            <div class="chip-selector setlist-item__roles" data-person-roles hidden></div>
-            <small data-no-roles hidden>Sin roles configurados</small>
-          </div>
-          <button type="button" class="setlist-item__remove" data-person-remove aria-label="Quitar">×</button>
-          <input type="hidden" name="person_ids" value="" data-input-id>
-        </li>
-      </template>
+        <template data-people-item-template>
+          <li class="setlist-item setlist-item--person" draggable="true" data-person-item>
+            <span class="setlist-item__handle" aria-hidden="true" title="Arrastrar">⋮⋮</span>
+            <span class="setlist-item__avatar setlist-item__avatar--fallback is-hidden" data-avatar-fallback aria-hidden="true"></span>
+            <img src="" alt="" class="setlist-item__avatar is-hidden" data-avatar-img referrerpolicy="no-referrer" draggable="false">
+            <div class="setlist-item__info">
+              <strong data-name></strong>
+              <div class="chip-selector setlist-item__roles" data-person-roles hidden></div>
+              <small data-no-roles hidden>Sin roles configurados</small>
+            </div>
+            <button type="button" class="setlist-item__remove" data-person-remove aria-label="Quitar">×</button>
+            <input type="hidden" name="person_ids" value="" data-input-id>
+          </li>
+        </template>
 
-      <template data-people-pool-template>
-        <button type="button" class="setlist-pool-item setlist-pool-item--person" data-person-add data-list-filter-item>
-          <span class="setlist-pool-item__avatar setlist-pool-item__avatar--fallback is-hidden" data-avatar-fallback aria-hidden="true"></span>
-          <img src="" alt="" class="setlist-pool-item__avatar is-hidden" data-avatar-img referrerpolicy="no-referrer">
-          <span class="setlist-pool-item__body">
-            <span class="setlist-pool-item__title" data-name></span>
-            <small class="setlist-pool-item__artist" data-roles-label></small>
-          </span>
-          <span class="setlist-pool-item__add" aria-hidden="true">+</span>
-        </button>
-      </template>
+        <template data-people-pool-template>
+          <button type="button" class="setlist-pool-item setlist-pool-item--person" data-person-add data-list-filter-item>
+            <span class="setlist-pool-item__avatar setlist-pool-item__avatar--fallback is-hidden" data-avatar-fallback aria-hidden="true"></span>
+            <img src="" alt="" class="setlist-pool-item__avatar is-hidden" data-avatar-img referrerpolicy="no-referrer">
+            <span class="setlist-pool-item__body">
+              <span class="setlist-pool-item__title" data-name></span>
+              <small class="setlist-pool-item__artist" data-roles-label></small>
+            </span>
+            <span class="setlist-pool-item__add" aria-hidden="true">+</span>
+          </button>
+        </template>
 
-      <template data-people-role-template>
-        <label class="chip-option" data-role-chip>
-          <input type="checkbox" value="" data-person-role checked>
-          <span data-role-label></span>
-        </label>
-      </template>
-    <% } %>
+        <template data-people-role-template>
+          <label class="chip-option" data-role-chip>
+            <input type="checkbox" value="" data-person-role checked>
+            <span data-role-label></span>
+          </label>
+        </template>
+      <% } %>
+    </div>
+  </details>
   </div>
 
-  <div class="section-card">
-    <h2>🎵 Canciones en orden</h2>
+  <div class="section-card section-card--primary">
+    <div class="section-card__header">
+      <div>
+        <h2>🎵 Canciones en orden</h2>
+        <p class="help-text">Sección principal del setlist. Añade, ordena y revisa cuántas veces se ha cantado cada canción.</p>
+      </div>
+      <span class="setlist-ordered-count" data-setlist-count-header><%= selectedSongsPreview.length %></span>
+    </div>
     <% if (!songs || songs.length === 0) { %>
       <div class="empty-state compact">
         <p>No hay canciones creadas aún.</p>
@@ -223,10 +287,21 @@
         .slice()
         .sort((a, b) => (a.position || 0) - (b.position || 0));
       const selectedIds = orderedSelected.map((song) => song.id);
+      const usageCounts = typeof songUsageCounts !== 'undefined' && songUsageCounts ? songUsageCounts : {};
+      const usageUntil = typeof songUsageUntil !== 'undefined' && songUsageUntil ? songUsageUntil : '';
+      const usageSince = typeof songUsageSince !== 'undefined' ? songUsageSince : '';
+      const excludeActivityId = isEdit && activity && activity.id ? activity.id : '';
     %>
-      <p class="help-text">Añade canciones desde la biblioteca. Arrastra para cambiar el orden del setlist.</p>
+      <p class="help-text">Arrastra para ordenar. El badge indica cuántas veces se ha cantado cada canción en el periodo elegido.</p>
 
-      <div class="setlist-builder" data-setlist-builder>
+      <div
+        class="setlist-builder"
+        data-setlist-builder
+        data-song-usage-root
+        data-song-usage-url="<%= base %>/admin/api/song-usage"
+        data-exclude-activity="<%= excludeActivityId %>"
+        data-usage-until="<%= usageUntil %>"
+      >
         <div class="setlist-ordered-wrap">
           <div class="setlist-ordered-head">
             <strong>Setlist</strong>
@@ -236,14 +311,17 @@
             <% if (orderedSelected.length === 0) { %>
               <li class="setlist-empty" data-setlist-empty>Todavía no hay canciones. Elige alguna abajo.</li>
             <% } %>
-            <% orderedSelected.forEach((song, index) => { %>
-              <li class="setlist-item" draggable="true" data-setlist-item data-song-id="<%= song.id %>">
+            <% orderedSelected.forEach((song, index) => {
+              const usage = Number(usageCounts[song.id] || 0);
+            %>
+              <li class="setlist-item" draggable="true" data-setlist-item data-song-id="<%= song.id %>" data-song-usage="<%= usage %>">
                 <span class="setlist-item__handle" aria-hidden="true" title="Arrastrar">⋮⋮</span>
                 <span class="setlist-item__order" data-order-badge><%= index + 1 %></span>
                 <div class="setlist-item__info">
                   <strong><%= song.title %></strong>
                   <% if (song.artist) { %><small><%= song.artist %></small><% } %>
                 </div>
+                <span class="song-usage-badge<%= usage === 0 ? ' is-zero' : '' %>" data-song-usage-badge<%= usage === 0 ? ' hidden' : '' %> title="<%= usage <= 0 ? '' : (usage === 1 ? '1 vez usado en el periodo' : usage + ' veces usado en el periodo') %>"><%= usage <= 0 ? '' : (usage === 1 ? '1 vez usado' : usage + ' veces usado') %></span>
                 <button type="button" class="setlist-item__remove" data-song-remove aria-label="Quitar <%= song.title %>">×</button>
                 <input type="hidden" name="song_ids" value="<%= song.id %>">
                 <input type="hidden" name="song_order[<%= song.id %>]" value="<%= index + 1 %>" data-song-order>
@@ -257,6 +335,28 @@
             <strong>Biblioteca</strong>
             <span class="help-text" style="margin:0">Clic para añadir</span>
           </div>
+
+          <div class="song-usage-filter" data-song-usage-filter>
+            <div class="song-usage-filter__presets" role="group" aria-label="Periodo de usos">
+              <button type="button" class="song-usage-preset is-active" data-usage-preset="all">Todo</button>
+              <button type="button" class="song-usage-preset" data-usage-preset="day">Día</button>
+              <button type="button" class="song-usage-preset" data-usage-preset="week">Semana</button>
+              <button type="button" class="song-usage-preset" data-usage-preset="month">Mes</button>
+              <button type="button" class="song-usage-preset" data-usage-preset="year">Año</button>
+            </div>
+            <label class="song-usage-filter__date">
+              <span>Desde</span>
+              <input
+                type="date"
+                data-usage-since
+                value="<%= usageSince %>"
+                max="<%= usageUntil %>"
+                aria-label="Contar usos desde esta fecha hasta hoy"
+              >
+            </label>
+            <p class="help-text song-usage-filter__summary" data-usage-summary>Veces cantada desde el inicio hasta hoy</p>
+          </div>
+
           <div class="search-bar search-bar--compact search-bar--full" style="margin-bottom:10px">
             <input
               type="search"
@@ -269,6 +369,7 @@
             <% songs.forEach((song) => {
               if (selectedIds.includes(song.id)) return;
               const filterText = [song.title, song.artist].filter(Boolean).join(' ');
+              const usage = Number(usageCounts[song.id] || 0);
             %>
               <button
                 type="button"
@@ -277,6 +378,7 @@
                 data-song-id="<%= song.id %>"
                 data-song-title="<%= song.title %>"
                 data-song-artist="<%= song.artist || '' %>"
+                data-song-usage="<%= usage %>"
                 data-list-filter-item
                 data-filter-text="<%= filterText %>"
               >
@@ -284,6 +386,7 @@
                 <% if (song.artist) { %>
                   <small class="setlist-pool-item__artist"><%= song.artist %></small>
                 <% } %>
+                <span class="song-usage-badge<%= usage === 0 ? ' is-zero' : '' %>" data-song-usage-badge title="<%= usage <= 0 ? 'Aún no se ha usado en el periodo' : (usage === 1 ? '1 vez usado en el periodo' : usage + ' veces usado en el periodo') %>"><%= usage <= 0 ? 'Sin usar' : (usage === 1 ? '1 vez usado' : usage + ' veces usado') %></span>
                 <span class="setlist-pool-item__add" aria-hidden="true">+</span>
               </button>
             <% }) %>
@@ -295,13 +398,14 @@
       </div>
 
       <template data-setlist-item-template>
-        <li class="setlist-item" draggable="true" data-setlist-item>
+        <li class="setlist-item" draggable="true" data-setlist-item data-song-usage="0">
           <span class="setlist-item__handle" aria-hidden="true" title="Arrastrar">⋮⋮</span>
           <span class="setlist-item__order" data-order-badge>1</span>
           <div class="setlist-item__info">
             <strong data-title></strong>
             <small data-artist hidden></small>
           </div>
+          <span class="song-usage-badge is-zero" data-song-usage-badge hidden></span>
           <button type="button" class="setlist-item__remove" data-song-remove aria-label="Quitar">×</button>
           <input type="hidden" name="song_ids" value="" data-input-id>
           <input type="hidden" name="" value="1" data-song-order data-input-order>
@@ -309,9 +413,10 @@
       </template>
 
       <template data-setlist-pool-template>
-        <button type="button" class="setlist-pool-item" data-song-add data-list-filter-item>
+        <button type="button" class="setlist-pool-item" data-song-add data-list-filter-item data-song-usage="0">
           <span class="setlist-pool-item__title" data-title></span>
           <small class="setlist-pool-item__artist" data-artist hidden></small>
+          <span class="song-usage-badge is-zero" data-song-usage-badge title="Aún no se ha usado en el periodo">Sin usar</span>
           <span class="setlist-pool-item__add" aria-hidden="true">+</span>
         </button>
       </template>
@@ -345,6 +450,44 @@
 
 <script src="<%= base %>/list-filter.js"></script>
 <script>
+  (function initDetailsSummary() {
+    const panel = document.querySelector('[data-form-panel="details"]');
+    if (!panel) return;
+    const summary = panel.querySelector('[data-details-summary]');
+    const nameInput = panel.querySelector('[data-details-field="name"]');
+    const dateInput = panel.querySelector('[data-details-field="date"]');
+    const timeInput = panel.querySelector('[data-details-field="time"]');
+    const detailInput = panel.querySelector('[data-details-field="detail"]');
+    if (!summary || !nameInput || !dateInput) return;
+
+    function formatDateEs(iso) {
+      if (!iso) return '';
+      const parts = String(iso).split('-');
+      if (parts.length !== 3) return iso;
+      return parts[2] + '/' + parts[1] + '/' + parts[0];
+    }
+
+    function refresh() {
+      const name = (nameInput.value || '').trim();
+      const date = dateInput.value || '';
+      const time = timeInput ? timeInput.value : '';
+      const detail = detailInput ? (detailInput.value || '').trim() : '';
+      const parts = [];
+      if (name) parts.push(name);
+      if (date) parts.push(formatDateEs(date) + (time ? ' · ' + time + 'h' : ''));
+      if (!name && !date) parts.push('Completa nombre y fecha');
+      else if (detail) parts.push('Con detalle');
+      summary.textContent = parts.join(' · ');
+    }
+
+    ['input', 'change'].forEach((eventName) => {
+      nameInput.addEventListener(eventName, refresh);
+      dateInput.addEventListener(eventName, refresh);
+      if (timeInput) timeInput.addEventListener(eventName, refresh);
+      if (detailInput) detailInput.addEventListener(eventName, refresh);
+    });
+  })();
+
   (function initSetlistBuilder() {
     const builder = document.querySelector('[data-setlist-builder]');
     if (!builder) return;
@@ -374,6 +517,8 @@
       }
       if (items.length > 0 && empty) empty.remove();
       if (countEl) countEl.textContent = String(items.length);
+      const headerCount = document.querySelector('[data-setlist-count-header]');
+      if (headerCount) headerCount.textContent = String(items.length);
     }
 
     function renumber() {
@@ -387,7 +532,39 @@
       ensureEmptyState();
     }
 
-    function createOrderedItem(songId, title, artist) {
+    function usageLabel(count, forPool) {
+      if (count <= 0) return forPool ? 'Aún no se ha usado en el periodo' : '';
+      if (count === 1) return '1 vez usado en el periodo';
+      return count + ' veces usado en el periodo';
+    }
+
+    function usageText(count, forPool) {
+      if (count <= 0) return forPool ? 'Sin usar' : '';
+      if (count === 1) return '1 vez usado';
+      return count + ' veces usado';
+    }
+
+    function setUsageOnNode(node, count) {
+      const value = Number(count) || 0;
+      node.dataset.songUsage = String(value);
+      const badge = node.querySelector('[data-song-usage-badge]');
+      if (!badge) return;
+      const isOrdered = node.matches('[data-setlist-item]');
+      const forPool = !isOrdered;
+      if (value <= 0 && isOrdered) {
+        badge.textContent = '';
+        badge.title = '';
+        badge.hidden = true;
+        badge.classList.add('is-zero');
+        return;
+      }
+      badge.hidden = false;
+      badge.textContent = usageText(value, forPool);
+      badge.title = usageLabel(value, forPool);
+      badge.classList.toggle('is-zero', value <= 0);
+    }
+
+    function createOrderedItem(songId, title, artist, usage) {
       const node = itemTemplate.content.firstElementChild.cloneNode(true);
       node.dataset.songId = String(songId);
       node.querySelector('[data-title]').textContent = title;
@@ -404,10 +581,11 @@
       const orderInput = node.querySelector('[data-input-order]');
       orderInput.name = 'song_order[' + songId + ']';
       orderInput.value = '1';
+      setUsageOnNode(node, usage);
       return node;
     }
 
-    function createPoolItem(songId, title, artist) {
+    function createPoolItem(songId, title, artist, usage) {
       const node = poolTemplate.content.firstElementChild.cloneNode(true);
       node.dataset.songId = String(songId);
       node.dataset.songTitle = title;
@@ -422,6 +600,7 @@
         artistEl.hidden = true;
         artistEl.textContent = '';
       }
+      setUsageOnNode(node, usage);
       return node;
     }
 
@@ -432,7 +611,8 @@
 
     function addSong(songId, title, artist, poolButton) {
       if (orderedList.querySelector('[data-song-id="' + songId + '"]')) return;
-      const item = createOrderedItem(songId, title, artist);
+      const usage = poolButton ? poolButton.dataset.songUsage : '0';
+      const item = createOrderedItem(songId, title, artist, usage);
       orderedList.appendChild(item);
       if (poolButton) poolButton.remove();
       bindItem(item);
@@ -442,6 +622,7 @@
 
     function removeSong(item) {
       const songId = item.dataset.songId;
+      const usage = item.dataset.songUsage || '0';
       const titleEl = item.querySelector('.setlist-item__info strong');
       const artistEl = item.querySelector('.setlist-item__info small');
       const titleText = titleEl ? titleEl.textContent.trim() : '';
@@ -449,7 +630,7 @@
         ? artistEl.textContent.trim()
         : '';
       item.remove();
-      library.appendChild(createPoolItem(songId, titleText, artistText));
+      library.appendChild(createPoolItem(songId, titleText, artistText, usage));
       renumber();
       refreshLibraryFilter();
     }
@@ -511,6 +692,167 @@
     ensureEmptyState();
   })();
 
+  (function initSongUsageFilter() {
+    const root = document.querySelector('[data-song-usage-root]');
+    if (!root) return;
+
+    const filter = root.querySelector('[data-song-usage-filter]');
+    const sinceInput = root.querySelector('[data-usage-since]');
+    const summary = root.querySelector('[data-usage-summary]');
+    const presets = Array.from(root.querySelectorAll('[data-usage-preset]'));
+    const usageUrl = root.getAttribute('data-song-usage-url') || '';
+    const excludeActivity = root.getAttribute('data-exclude-activity') || '';
+    if (!filter || !sinceInput || !usageUrl) return;
+
+    let activePreset = 'all';
+    let requestToken = 0;
+
+    function pad(value) {
+      return String(value).padStart(2, '0');
+    }
+
+    function toLocalISO(date) {
+      return date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate());
+    }
+
+    function todayISO() {
+      return root.getAttribute('data-usage-until') || toLocalISO(new Date());
+    }
+
+    function shiftDate(days) {
+      const date = new Date();
+      date.setHours(12, 0, 0, 0);
+      date.setDate(date.getDate() + days);
+      return toLocalISO(date);
+    }
+
+    function shiftMonths(months) {
+      const date = new Date();
+      date.setHours(12, 0, 0, 0);
+      date.setMonth(date.getMonth() + months);
+      return toLocalISO(date);
+    }
+
+    function shiftYears(years) {
+      const date = new Date();
+      date.setHours(12, 0, 0, 0);
+      date.setFullYear(date.getFullYear() + years);
+      return toLocalISO(date);
+    }
+
+    function formatDisplayDate(iso) {
+      if (!iso) return '';
+      const parts = iso.split('-');
+      if (parts.length !== 3) return iso;
+      return parts[2] + '/' + parts[1] + '/' + parts[0];
+    }
+
+    function usageLabel(count, forPool) {
+      if (count <= 0) return forPool ? 'Aún no se ha usado en el periodo' : '';
+      if (count === 1) return '1 vez usado en el periodo';
+      return count + ' veces usado en el periodo';
+    }
+
+    function usageText(count, forPool) {
+      if (count <= 0) return forPool ? 'Sin usar' : '';
+      if (count === 1) return '1 vez usado';
+      return count + ' veces usado';
+    }
+
+    function setActivePreset(preset) {
+      activePreset = preset;
+      presets.forEach((button) => {
+        button.classList.toggle('is-active', button.getAttribute('data-usage-preset') === preset);
+      });
+    }
+
+    function updateSummary(since, until) {
+      if (!summary) return;
+      if (!since) {
+        summary.textContent = 'Veces cantada desde el inicio hasta hoy';
+        return;
+      }
+      summary.textContent = 'Veces cantada desde ' + formatDisplayDate(since) + ' hasta ' + formatDisplayDate(until || todayISO());
+    }
+
+    function applyCounts(counts) {
+      const map = counts || {};
+      root.querySelectorAll('[data-song-id]').forEach((el) => {
+        const id = el.getAttribute('data-song-id');
+        const value = Number(map[id] != null ? map[id] : map[Number(id)] || 0) || 0;
+        el.dataset.songUsage = String(value);
+        const badge = el.querySelector('[data-song-usage-badge]');
+        if (!badge) return;
+        const isOrdered = el.matches('[data-setlist-item]');
+        const forPool = !isOrdered;
+        if (value <= 0 && isOrdered) {
+          badge.textContent = '';
+          badge.title = '';
+          badge.hidden = true;
+          badge.classList.add('is-zero');
+          return;
+        }
+        badge.hidden = false;
+        badge.textContent = usageText(value, forPool);
+        badge.title = usageLabel(value, forPool);
+        badge.classList.toggle('is-zero', value <= 0);
+      });
+    }
+
+    function fetchUsage(since) {
+      const token = ++requestToken;
+      const params = new URLSearchParams();
+      if (since) params.set('since', since);
+      if (excludeActivity) params.set('excludeActivityId', excludeActivity);
+      const url = usageUrl + (params.toString() ? '?' + params.toString() : '');
+      root.classList.add('is-usage-loading');
+      fetch(url, { headers: { Accept: 'application/json' }, credentials: 'same-origin' })
+        .then((response) => {
+          if (!response.ok) throw new Error('usage_fetch_failed');
+          return response.json();
+        })
+        .then((data) => {
+          if (token !== requestToken) return;
+          applyCounts(data.counts || {});
+          updateSummary(data.since || since || '', data.until || todayISO());
+        })
+        .catch(() => {
+          if (token !== requestToken) return;
+          if (summary) summary.textContent = 'No se pudieron actualizar los usos. Inténtalo de nuevo.';
+        })
+        .finally(() => {
+          if (token === requestToken) root.classList.remove('is-usage-loading');
+        });
+    }
+
+    function applyPreset(preset) {
+      let since = '';
+      if (preset === 'day') since = todayISO();
+      else if (preset === 'week') since = shiftDate(-6);
+      else if (preset === 'month') since = shiftMonths(-1);
+      else if (preset === 'year') since = shiftYears(-1);
+      else since = '';
+
+      setActivePreset(preset);
+      sinceInput.value = since;
+      fetchUsage(since);
+    }
+
+    presets.forEach((button) => {
+      button.addEventListener('click', () => {
+        applyPreset(button.getAttribute('data-usage-preset') || 'all');
+      });
+    });
+
+    sinceInput.addEventListener('change', () => {
+      const since = sinceInput.value || '';
+      setActivePreset(since ? 'custom' : 'all');
+      fetchUsage(since);
+    });
+
+    updateSummary(sinceInput.value || '', todayISO());
+  })();
+
   (function initPeopleBuilder() {
     const builder = document.querySelector('[data-people-builder]');
     if (!builder) return;
@@ -550,6 +892,53 @@
       }
       if (items.length > 0 && empty) empty.remove();
       if (countEl) countEl.textContent = String(items.length);
+      updatePeopleSummary(items);
+    }
+
+    function updatePeopleSummary(items) {
+      const summary = document.querySelector('[data-people-summary]');
+      const badge = document.querySelector('[data-people-summary-count]');
+      const avatars = document.querySelector('[data-people-summary-avatars]');
+      const names = items.map((item) => item.dataset.personName || '').filter(Boolean);
+      if (badge) badge.textContent = String(names.length);
+      if (avatars) {
+        avatars.innerHTML = '';
+        if (items.length === 0) {
+          avatars.hidden = true;
+        } else {
+          avatars.hidden = false;
+          items.slice(0, 4).forEach((item) => {
+            const photo = item.dataset.personPhoto || '';
+            const initial = item.dataset.personInitial || (item.dataset.personName || 'P').charAt(0).toUpperCase();
+            if (photo) {
+              const img = document.createElement('img');
+              img.className = 'form-panel__avatar';
+              img.src = photo;
+              img.alt = '';
+              img.width = 28;
+              img.height = 28;
+              img.referrerPolicy = 'no-referrer';
+              avatars.appendChild(img);
+            } else {
+              const span = document.createElement('span');
+              span.className = 'form-panel__avatar form-panel__avatar--fallback';
+              span.setAttribute('aria-hidden', 'true');
+              span.textContent = initial;
+              avatars.appendChild(span);
+            }
+          });
+        }
+      }
+      if (!summary) return;
+      if (names.length === 0) {
+        summary.textContent = 'Ninguna persona asignada · Clic para editar';
+      } else if (names.length === 1) {
+        summary.textContent = names[0] + ' · Clic para editar';
+      } else if (names.length === 2) {
+        summary.textContent = names.join(' y ') + ' · Clic para editar';
+      } else {
+        summary.textContent = names.slice(0, 2).join(', ') + ' y ' + (names.length - 2) + ' más · Clic para editar';
+      }
     }
 
     function setAvatar(root, photo, initial) {

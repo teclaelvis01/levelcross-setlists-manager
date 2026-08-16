@@ -302,7 +302,8 @@ main {
   border-radius: var(--radius);
 }
 
-.settings-panel {
+.settings-panel,
+.form-panel {
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -310,7 +311,8 @@ main {
   overflow: hidden;
 }
 
-.settings-panel__summary {
+.settings-panel__summary,
+.form-panel__summary {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -321,11 +323,13 @@ main {
   user-select: none;
 }
 
-.settings-panel__summary::-webkit-details-marker {
+.settings-panel__summary::-webkit-details-marker,
+.form-panel__summary::-webkit-details-marker {
   display: none;
 }
 
-.settings-panel__summary::after {
+.settings-panel__summary::after,
+.form-panel__summary::after {
   content: '';
   width: 8px;
   height: 8px;
@@ -337,27 +341,32 @@ main {
   margin-top: -4px;
 }
 
-.settings-panel[open] > .settings-panel__summary::after {
+.settings-panel[open] > .settings-panel__summary::after,
+.form-panel[open] > .form-panel__summary::after {
   transform: rotate(225deg);
   margin-top: 4px;
 }
 
-.settings-panel__heading {
+.settings-panel__heading,
+.form-panel__heading {
   min-width: 0;
   flex: 1;
 }
 
-.settings-panel__heading h2 {
+.settings-panel__heading h2,
+.form-panel__heading h2 {
   font-size: 1rem;
   font-weight: 650;
   margin: 0 0 4px;
 }
 
-.settings-panel__heading .help-text {
+.settings-panel__heading .help-text,
+.form-panel__heading .help-text {
   margin: 0;
 }
 
-.settings-panel__badge {
+.settings-panel__badge,
+.form-panel__badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -373,12 +382,56 @@ main {
   flex-shrink: 0;
 }
 
-.settings-panel__body {
+.form-panel__hint {
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  font-weight: 650;
+  color: var(--text-muted);
+  margin-right: 4px;
+}
+
+.form-panel__avatars {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  margin-right: 2px;
+}
+
+.form-panel__avatars[hidden] {
+  display: none;
+}
+
+.form-panel__avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid var(--bg-card, #151515);
+  background: var(--bg-elevated, #2a2a2a);
+  margin-left: -8px;
+}
+
+.form-panel__avatars > .form-panel__avatar:first-child {
+  margin-left: 0;
+}
+
+.form-panel__avatar--fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.settings-panel__body,
+.form-panel__body {
   padding: 0 18px 18px;
   border-top: 1px solid transparent;
 }
 
-.settings-panel[open] > .settings-panel__body {
+.settings-panel[open] > .settings-panel__body,
+.form-panel[open] > .form-panel__body {
   border-top-color: var(--border);
   padding-top: 14px;
 }
@@ -439,6 +492,53 @@ main {
   border-radius: var(--radius);
   padding: 18px;
   margin-bottom: 16px;
+}
+
+.section-card--primary {
+  border-color: color-mix(in srgb, var(--primary, #6366f1) 35%, var(--border));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary, #6366f1) 12%, transparent);
+}
+
+.section-card__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.section-card__header h2 {
+  margin: 0 0 4px;
+}
+
+.section-card__header .help-text {
+  margin: 0;
+}
+
+.section-card--primary .setlist-builder {
+  gap: 20px;
+}
+
+.section-card--primary .setlist-library {
+  max-height: min(52vh, 560px);
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.activity-editor .form-panel:not([open]) .form-panel__summary {
+  padding-top: 14px;
+  padding-bottom: 14px;
+}
+
+.activity-editor__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.activity-editor__meta > .form-panel {
+  margin-bottom: 0;
 }
 
 .section-card h2 {
@@ -2636,6 +2736,104 @@ body.confirm-delete-open {
   color: #c7c4ff;
   font-size: 0.75rem;
   font-weight: 700;
+}
+
+.song-usage-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--bg-card, #151515) 90%, #000);
+}
+
+.song-usage-filter__presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.song-usage-preset {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1;
+  padding: 7px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.song-usage-preset:hover {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--text) 25%, var(--border));
+}
+
+.song-usage-preset.is-active {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--primary, #6366f1) 45%, var(--border));
+  background: color-mix(in srgb, var(--primary, #6366f1) 16%, transparent);
+}
+
+.song-usage-filter__date {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.song-usage-filter__date input[type='date'] {
+  font: inherit;
+  font-size: 0.82rem;
+  color: var(--text);
+  background: var(--bg, #111);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 8px;
+  min-height: 34px;
+}
+
+.song-usage-filter__summary {
+  flex: 1 1 100%;
+  margin: 0;
+}
+
+.setlist-builder.is-usage-loading .song-usage-badge {
+  opacity: 0.45;
+}
+
+.song-usage-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  min-width: 2rem;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--primary, #6366f1) 35%, var(--border));
+  background: color-mix(in srgb, var(--primary, #6366f1) 14%, transparent);
+  color: var(--text);
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.song-usage-badge.is-zero {
+  border-color: var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.setlist-pool-item .song-usage-badge {
+  margin-top: 2px;
 }
 
 .setlist-ordered {

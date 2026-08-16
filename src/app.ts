@@ -303,6 +303,75 @@ function getActivityRelations(activityId: number) {
   return { activity, songs, people };
 }
 
+function todayLocalISO(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function parseIsoDateParam(value: unknown): string | null {
+  const raw = String(value || '').trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : null;
+}
+
+/** Times each song appears in activities with activity_date in [since, until]. */
+function getSongUsageCounts(options: {
+  since?: string | null;
+  until?: string | null;
+  excludeActivityId?: number | null;
+} = {}): Record<number, number> {
+  const until = parseIsoDateParam(options.until) || todayLocalISO();
+  const since = parseIsoDateParam(options.since);
+  const excludeId =
+    typeof options.excludeActivityId === 'number' && Number.isInteger(options.excludeActivityId) && options.excludeActivityId > 0
+      ? options.excludeActivityId
+      : null;
+
+  let sql = `
+    SELECT a_s.song_id AS song_id, COUNT(*) AS times
+    FROM activity_songs a_s
+    INNER JOIN activities a ON a.id = a_s.activity_id
+    WHERE a.activity_date <= ?
+  `;
+  const params: Array<string | number> = [until];
+  if (since) {
+    sql += ' AND a.activity_date >= ?';
+    params.push(since);
+  }
+  if (excludeId != null) {
+    sql += ' AND a.id != ?';
+    params.push(excludeId);
+  }
+  sql += ' GROUP BY a_s.song_id';
+
+  const rows = db.prepare(sql).all(...params) as Array<{ song_id: number; times: number }>;
+  const counts: Record<number, number> = {};
+  for (const row of rows) {
+    counts[row.song_id] = Number(row.times) || 0;
+  }
+  return counts;
+}
+
+function withSongUsageLocals<T extends Record<string, unknown>>(locals: T): T & {
+  songUsageCounts: Record<number, number>;
+  songUsageUntil: string;
+  songUsageSince: string;
+} {
+  const activity = locals.activity as { id?: number } | null | undefined;
+  const excludeActivityId =
+    activity && typeof activity.id === 'number' && Number.isInteger(activity.id) && activity.id > 0
+      ? activity.id
+      : null;
+  return {
+    ...locals,
+    songUsageCounts: getSongUsageCounts({ excludeActivityId }),
+    songUsageUntil: todayLocalISO(),
+    songUsageSince: '',
+  };
+}
+
 function collectSelectedPeopleIds(input: unknown): number[] {
   const rawValues = Array.isArray(input) ? input : (input ? [input] : []);
   return [...new Set(
@@ -1879,7 +1948,7 @@ app.post('/admin/ajustes/roles/:id/delete', requireAuth, requirePermission('sett
 app.get('/admin/actividades/nueva', requireAuth, requirePermission('activities', 'write'), (req, res) => {
   const songs = db.prepare('SELECT * FROM songs ORDER BY title ASC').all() as Song[];
   const people = listAssignablePeopleForActivity();
-  res.render('activity-form', {
+  res.render('activity-form', withSongUsageLocals({
     activity: null,
     songs,
     people,
@@ -1889,7 +1958,7 @@ app.get('/admin/actividades/nueva', requireAuth, requirePermission('activities',
     roles: listMusicalRoleNames(),
     fieldErrors: {},
     error: null,
-  });
+  }));
 });
 
 app.get('/admin/actividades/:id/editar', requireAuth, requirePermission('activities', 'write'), (req, res) => {
@@ -1899,7 +1968,7 @@ app.get('/admin/actividades/:id/editar', requireAuth, requirePermission('activit
   }
   const songs = db.prepare('SELECT * FROM songs ORDER BY title ASC').all() as Song[];
   const people = listAssignablePeopleForActivity(assignedPeople);
-  res.render('activity-form', {
+  res.render('activity-form', withSongUsageLocals({
     activity,
     songs,
     people,
@@ -1909,6 +1978,18 @@ app.get('/admin/actividades/:id/editar', requireAuth, requirePermission('activit
     roles: listMusicalRoleNames(),
     fieldErrors: {},
     error: null,
+  }));
+});
+
+app.get('/admin/api/song-usage', requireAuth, requirePermission('activities', 'write'), (req, res) => {
+  const since = parseIsoDateParam(req.query.since);
+  const excludeRaw = Number(req.query.excludeActivityId);
+  const excludeActivityId = Number.isInteger(excludeRaw) && excludeRaw > 0 ? excludeRaw : null;
+  const until = todayLocalISO();
+  res.json({
+    since,
+    until,
+    counts: getSongUsageCounts({ since, until, excludeActivityId }),
   });
 });
 
@@ -1921,7 +2002,7 @@ app.post('/admin/actividades', requireAuth, requirePermission('activities', 'wri
     const songs = db.prepare('SELECT * FROM songs ORDER BY title ASC').all() as Song[];
     const people = listAssignablePeopleForActivity();
     showFormError(res, 'El nombre y la fecha son requeridos');
-    return res.status(400).render('activity-form', {
+    return res.status(400).render('activity-form', withSongUsageLocals({
       activity: { name, activity_date: activityDate, activity_time: activityTime, detail },
       songs,
       people,
@@ -1931,7 +2012,7 @@ app.post('/admin/actividades', requireAuth, requirePermission('activities', 'wri
       roles: listMusicalRoleNames(),
       fieldErrors: { name: !name, activity_date: !activityDate },
       error: null,
-    });
+    }));
   }
 
   try {
@@ -1967,7 +2048,7 @@ app.post('/admin/actividades/:id', requireAuth, requirePermission('activities', 
     const assignedPeople = buildAssignedPeopleFromBody(req);
     const people = listAssignablePeopleForActivity(assignedPeople);
     showFormError(res, 'El nombre y la fecha son requeridos');
-    return res.status(400).render('activity-form', {
+    return res.status(400).render('activity-form', withSongUsageLocals({
       activity: { ...existing, name, activity_date: activityDate, activity_time: activityTime, detail },
       songs,
       people,
@@ -1977,7 +2058,7 @@ app.post('/admin/actividades/:id', requireAuth, requirePermission('activities', 
       roles: listMusicalRoleNames(),
       fieldErrors: { name: !name, activity_date: !activityDate },
       error: null,
-    });
+    }));
   }
 
   try {
